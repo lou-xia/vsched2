@@ -4,6 +4,9 @@
 //!
 //! 几个函数的运行顺序：`trap_entry` -> `run_task`，`schedule` -> `run_task`，之后在`schedule`和`run_task`中循环，使用`jmp`相互跳转实现循环
 
+use crate::interface::{Task, TaskState};
+use crate::stack::*;
+
 /// 内核态同步trap入口
 ///
 /// 保存上下文，切换栈，进入`trap_handle`
@@ -68,9 +71,18 @@ pub extern "C" fn utok_schedule() {
 /// 运行当前地址空间和特权级中的任务
 ///
 /// 根据任务类型（线程或协程）切换或回收栈，并恢复上下文
-#[no_mangle]
-pub extern "C" fn run_task() {
-    todo!()
+// #[no_mangle]
+pub extern "C" fn run_task(next_task: impl Task) {
+    next_task.set_state(TaskState::Running);
+    if next_task.is_coroutine() {
+        // 切换或回收栈
+        // 恢复上下文
+        todo!()
+    } else {
+        // 切换或回收栈
+        // 恢复上下文
+        todo!()
+    }
 }
 
 /// 在内核态运行用户态任务

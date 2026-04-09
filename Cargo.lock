@@ -204,6 +204,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 [[package]]
 name = "vdso_helper"
 version = "0.1.0"
+source = "git+https://github.com/rosy233333/vdso_crate_template.git#285512cf8cd1d256d98e80b21740cdd3b5d4bd59"
 dependencies = [
  "lazyinit",
  "paste",

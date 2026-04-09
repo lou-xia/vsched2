@@ -167,6 +167,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,7 +204,6 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 [[package]]
 name = "vdso_helper"
 version = "0.1.0"
-source = "git+https://github.com/rosy233333/vdso_crate_template.git#a3a5e45a2899f696ce03082cebfd6f5d17485247"
 dependencies = [
  "lazyinit",
  "paste",
@@ -215,6 +220,8 @@ checksum = "442887c63f2c839b346c192d047a7c87e73d0689c9157b00b53dcc27dd5ea793"
 name = "vsched2"
 version = "0.1.0"
 dependencies = [
+ "lazyinit",
+ "spin",
  "vdso_helper",
 ]
 

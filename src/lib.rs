@@ -3,5 +3,9 @@
 #![no_std]
 #![deny(missing_docs)]
 
+mod current;
 mod interface;
 mod schedule_loop;
+mod scheduler;
+
+use current::VvarData;

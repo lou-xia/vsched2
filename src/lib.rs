@@ -3,8 +3,10 @@
 #![no_std]
 #![deny(missing_docs)]
 
-extern crate alloc;
-
+mod current;
 mod interface;
 mod schedule_loop;
+mod scheduler;
 mod stack;
+
+use current::VvarData;

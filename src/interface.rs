@@ -1,5 +1,7 @@
 use core::task::Poll;
-use vdso_helper::trait_interface;
+use vdso_helper::{trait_interface, use_mut_cfg};
+
+use_mut_cfg!();
 
 trait_interface! {
     /// 任务的描述，以及执行流切换
@@ -67,6 +69,16 @@ trait_interface! {
         ///
         /// trap处理任务的执行流程应如图所示：[trap处理任务执行流程.png](https://github.com/rosy233333/weekly-progress/blob/dev/26.3.23~26.3.29/trap%E5%A4%84%E7%90%86%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.png)
         fn get_handler(task: *const ()) -> *const ();
+    }
+}
+
+trait_interface! {
+    /// 多核接口
+    ///
+    /// 除了此处以外，还包括编译时通过环境变量修改的核心数`CPU_NUM`。
+    pub trait SMP {
+        /// 获取当前cpuid
+        fn cpu_id() -> usize;
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::{
     interface::{Stack, StackVirtImpl},
 };
-use alloc::vec::Vec;
+use heapless::vec::Vec;
 
 /// 获取sp指针
 #[inline(always)]
@@ -88,7 +88,7 @@ const STACK_POOL_SIZE: usize = 16;
 /// 管理栈的分配和回收，提供栈切换的接口
 pub struct StackHandler {
     /// 空栈的集合
-    pub free_stacks: Vec<StackWapper>,
+    pub free_stacks: Vec<StackWapper, STACK_POOL_SIZE>,
     /// 当前使用的栈
     pub current_stack: Option<StackWapper>,
 }

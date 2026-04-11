@@ -6,6 +6,13 @@
 
 use crate::interface::{Task, TaskState};
 use crate::stack::*;
+use vdso_helper::get_vvar_data;
+
+use crate::{
+    current::get_current_task,
+    interface::{SMPVirtImpl, Task, SMP},
+    jump,
+};
 
 /// 内核态同步trap入口
 ///
@@ -13,7 +20,7 @@ use crate::stack::*;
 ///
 /// 特殊情况：
 ///
-/// - 外部中断，进入`kschdule`
+/// - 外部中断，进入`kschedule`
 /// - 特殊的系统调用号，若是则进入`utok_schedule`
 #[no_mangle]
 pub extern "C" fn ktrap_entry() {
@@ -33,7 +40,20 @@ pub extern "C" fn utrap_entry() {
 /// 保存上下文，进入`kschedule`或`uschedule`
 #[no_mangle]
 pub extern "C" fn thread_entry() {
-    todo!()
+    // 由于jump在语法上并未结束这个函数，函数内部的局部变量可能无法及时释放。
+    //
+    // 因此，需要将jump之前的代码用代码块包裹起来，仅将jump所需的判断条件以基本类型的形式传出代码块。
+    let in_kernel = {
+        // 该代码块为除跳转以外的函数主要逻辑
+        get_current_task().save_thread_context();
+        get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].load(core::sync::atomic::Ordering::Acquire)
+    };
+    if in_kernel {
+        // 不知道此时栈中是否有内容（例如in_kernel）
+        jump!(kschedule);
+    } else {
+        jump!(uschedule);
+    }
 }
 
 /// 同步trap处理函数

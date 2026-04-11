@@ -10,6 +10,7 @@ vdso_helper = { git = "https://github.com/rosy233333/vdso_crate_template.git" }
 # vdso_helper = { path = "../vdso_crate_template/vdso_helper" }
 spin = { version = "0.10", default-features = false, features = ["spin_mutex"] }
 lazyinit = "0.2.2"
+heapless = "0.9.2"
 
 [build_dependencies]
 vdso_helper = { git = "https://github.com/rosy233333/vdso_crate_template.git" }

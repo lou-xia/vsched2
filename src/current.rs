@@ -11,16 +11,17 @@ use spin::mutex::SpinMutex;
 use vdso_helper::{get_vvar_data, vvar_data};
 
 use crate::{
-    interface::{CPU_NUM, SMP, SMPVirtImpl, TaskVirtImpl},
-    scheduler::{ProcessInfoTable, Scheduler}, stack::StackHandler,
+    interface::{CPU_NUM, ContextVirtImpl, SMP, SMPVirtImpl, TaskVirtImpl},
+    scheduler::{ProcessInfoTable, Scheduler},
+    stack::{StackHandler, StackWapper},
 };
 
-/// 当前栈变量以栈底指针形式存储，实现为perCPU的私有数据。
-///
-/// 通过每个地址空间提供的`Stack::alloc`和`Stack::dealloc`管理。
-///
-/// 通过比较栈顶寄存器与当前变量中存储的栈底指针，可以得知调度器当前在空栈还是非空栈上运行。进而决定是否回收/切换栈。
-pub(crate) static CURRENT_STACK: [AtomicPtr<()>; CPU_NUM] = [AtomicPtr::new(null_mut()); CPU_NUM];
+// / 当前栈变量以栈底指针形式存储，实现为perCPU的私有数据。
+// /
+// / 通过每个地址空间提供的`Stack::alloc`和`Stack::dealloc`管理。
+// /
+// / 通过比较栈顶寄存器与当前变量中存储的栈底指针，可以得知调度器当前在空栈还是非空栈上运行。进而决定是否回收/切换栈。
+// pub(crate) static CURRENT_STACK: [AtomicPtr<()>; CPU_NUM] = [AtomicPtr::new(null_mut()); CPU_NUM];
 
 vvar_data! {
     /// 当前任务以指针形式存储，且使用已初始化的虚函数表调用当前任务的方法。
@@ -46,6 +47,12 @@ vvar_data! {
     ///
     /// 存储了进程的最高优先级（全局共享）和地址空间（仅内核态访问），且承担了分配进程号的功能。
     PROCESS_INFO_TABLE: ProcessInfoTable,
+    /// 内核栈，实现为非perCPU的共享数据。
+    /// 
+    /// 每个CPU分配一个内核栈，在trap时作为trap处理协程的栈使用
+    /// 
+    /// TODO：考虑内核任务支持线程接口
+    KERNEL_STACKS: SpinMutex<StackHandler>,
 }
 
 pub(crate) fn get_current_task() -> &'static TaskVirtImpl {

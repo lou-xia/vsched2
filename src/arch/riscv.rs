@@ -47,6 +47,14 @@ macro_rules! set_sp {
     };
 }
 
+/// 设置sp寄存器的值。
+#[macro_export]
+macro_rules! switch_sp_tratrampoline {
+    ($f:ident) => {
+        core::arch::naked_asm!("mv sp, a0", "j {}", sym $f);
+    };
+}
+
 /// 获取sp寄存器的值。
 #[macro_export]
 macro_rules! get_sp {

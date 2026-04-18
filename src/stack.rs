@@ -3,8 +3,10 @@ use core::task::Poll;
 use crate::{
     current::get_current_task,
     get_sp,
-    interface::{CPU_NUM, SMP, SMPVirtImpl, STACK_POOL_SIZE, Stack, StackVirtImpl, Task, TaskState},
-    set_sp,
+    interface::{
+        SMPVirtImpl, Stack, StackVirtImpl, Task, TaskState, CPU_NUM, SMP, STACK_POOL_SIZE,
+    },
+    set_sp, switch_sp_tratrampoline,
 };
 use heapless::vec::Vec;
 use vdso_helper::get_vvar_data;
@@ -22,19 +24,19 @@ fn get_stack_type(stack_base: usize) -> usize {
 #[no_mangle]
 #[unsafe(naked)]
 unsafe extern "C" fn coroutine_trampoline() -> ! {
-    core::arch::naked_asm!("mv sp, a0", "j run_coroutine",);
+    switch_sp_tratrampoline!(run_coroutine)
 }
 
 #[no_mangle]
 #[unsafe(naked)]
 unsafe extern "C" fn thread_trampoline() -> ! {
-    core::arch::naked_asm!("mv sp, a0", "j run_thread",);
+    switch_sp_tratrampoline!(run_thread)
 }
 
 #[no_mangle]
 #[unsafe(naked)]
 unsafe extern "C" fn coroutine_into_user_trampoline() -> ! {
-    core::arch::naked_asm!("mv sp, a0", "j run_coroutine_into_user",);
+    switch_sp_tratrampoline!(run_coroutine_into_user)
 }
 /// 对栈进行封装
 ///
@@ -56,9 +58,7 @@ impl StackWapper {
     /// 分配一个新的栈
     pub fn new() -> Self {
         let base = StackVirtImpl::alloc() as usize;
-        Self {
-            base,
-        }
+        Self { base }
     }
 
     /// 从一个已有的栈中获取一个新实例
@@ -156,9 +156,7 @@ impl StackHandler {
 
     pub fn try_alloc_stack(&mut self) {
         let cpu_id = SMPVirtImpl::cpu_id();
-        if get_stack_type(self.current_stack[cpu_id].as_ref().unwrap().base) == 0 {
-            
-        }
+        if get_stack_type(self.current_stack[cpu_id].as_ref().unwrap().base) == 0 {}
     }
 }
 

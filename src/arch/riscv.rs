@@ -178,7 +178,7 @@ global_asm!(
         .word 0xdeadbeef
 
     # `raw_run_task`为从内核态调度器返回用户态调度器时返回的pc。
-    # 返回时，需要设置正确的s1和s2。
+    # 从内核返回用户态时，需要设置正确的s1和s2。
     #
     # 从`run_task`中返回后，需要重新设置s1和s2寄存器，因为`run_task`使用跳板切换了栈，再从另一个函数返回。
     # 此时，被调用者不再能可靠地保存s1和s2。
@@ -196,8 +196,8 @@ global_asm!(
         mv a0, s1
         mv a1, s2
         call run_task
-        mv s1, a0
-        li s2, 0
+        mv s1, a0 # 通过`run_task`（实际是`run_coroutine`）的返回值设置s1
+        li s2, 0 # 从`run_task`（实际是`run_coroutine`）中返回则一定是协程，因此是空栈
         li a1, 0
         beq s1, a1, raw_kschedule
         li a1, 1

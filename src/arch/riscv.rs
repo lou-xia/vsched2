@@ -61,6 +61,31 @@ macro_rules! get_sp {
     };
 }
 
+/// 设置新的sscratch寄存器的值。
+#[macro_export]
+macro_rules! set_pre_stack {
+    ($f:expr) => {
+        unsafe {
+            core::arch::asm!("
+                csrw sscratch, {}
+            ", in(reg) $f);
+        }
+    };
+}
+
+// TODO：？
+/// 设置新的uscratch寄存器的值。
+#[macro_export]
+macro_rules! set_user_pre_stack {
+    ($f:expr) => {
+        // unsafe {
+            // core::arch::asm!("
+            //     csrw uscratch, {}
+            // ", in(reg) $f);
+        // }
+    };
+}
+
 global_asm!(
     r#"
     .globl raw_trap_entry, raw_thread_entry, raw_run_task, raw_kschedule

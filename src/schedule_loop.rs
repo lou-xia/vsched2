@@ -9,6 +9,7 @@ use core::task::Poll;
 use crate::{
     current::{get_current_task, STACK_HANDLER},
     interface::{Context, ContextVirtImpl, SMPVirtImpl, Task, TaskState, TaskVirtImpl, SMP},
+    set_pre_stack, set_user_pre_stack,
 };
 use vdso_helper::get_vvar_data;
 
@@ -34,7 +35,40 @@ use vdso_helper::get_vvar_data;
 /// - 3: `utok_schedule`
 #[no_mangle]
 pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
-    todo!()
+    match trap_type {
+        // 普通同步 trap，进入 trap 处理流程。
+        0 => {
+            if privilege == 0 {
+                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base;
+                set_pre_stack!(new_stack_base);
+            } else if privilege == 1 {
+                // let new_stack_base = STACK_HANDLER.lock().alloc_stack().base;
+                // set_user_pre_stack!(new_stack_base);
+                unimplemented!("user mode not supported yet")
+            } else {
+                unreachable!("unknown privilege level: {privilege}")
+            }
+            0
+        }
+        // 外部中断，将当前任务重新放回就绪态后进入对应调度器。
+        1 => {
+            get_current_task().set_state(TaskState::Ready);
+            if privilege == 0 {
+                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base;
+                set_pre_stack!(new_stack_base);
+                1
+            } else if privilege == 1 {
+                // let new_stack_base = STACK_HANDLER.lock().alloc_stack().base;
+                // sset_user_pre_stack!(new_stack_base);
+                2
+            } else {
+                unreachable!("unknown privilege level: {privilege}")
+            }
+        }
+        // 从用户态调度器主动陷入内核，只需要继续进入内核侧调度。
+        2 => 3,
+        _ => unreachable!("unknown trap type: {trap_type}"),
+    }
 }
 
 // /// 用户态同步trap入口
@@ -156,7 +190,7 @@ pub extern "C" fn run_task(privilege: usize, stack_status: usize) {
             stack_handler.get_empty_stack(stack_status)
         };
         unsafe {
-            core::arch::asm!("call coroutine_trampoline", in("a0") new_sp, in("a1") ret_addr, options(noreturn));
+            core::arch::asm!("j coroutine_trampoline", in("a0") new_sp, in("a1") ret_addr, options(noreturn));
         }
     } else {
         let thread_stack = { get_current_task().thread_stack_base() };
@@ -169,7 +203,7 @@ pub extern "C" fn run_task(privilege: usize, stack_status: usize) {
             stack_handler.get_thread_stack(Some(thread_stack.into()), stack_status);
         };
         unsafe {
-            core::arch::asm!("call thread_trampoline", in("a0") thread_stack, in("a1") ret_addr, options(noreturn));
+            core::arch::asm!("j thread_trampoline", in("a0") thread_stack, in("a1") ret_addr, options(noreturn));
         }
     }
 }
@@ -231,9 +265,9 @@ unsafe extern "C" fn run_coroutine() {
             get_current_task().set_state(TaskState::Blocked);
         }
     }
-    unsafe {
-        core::arch::asm!("ret", options(noreturn));
-    }
+    // unsafe {
+    //     core::arch::asm!("ret", options(noreturn));
+    // }
 }
 
 /// 运行线程

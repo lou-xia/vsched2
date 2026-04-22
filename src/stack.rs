@@ -1,12 +1,9 @@
 use core::task::Poll;
 
 use crate::{
-    current::get_current_task,
-    get_sp,
-    interface::{
-        SMPVirtImpl, Stack, StackVirtImpl, Task, TaskState, CPU_NUM, SMP, STACK_POOL_SIZE,
-    },
-    set_sp, switch_sp_tratrampoline,
+    current::get_current_task, get_sp, interface::{
+        CPU_NUM, SMP, SMPVirtImpl, STACK_POOL_SIZE, Stack, StackVirtImpl, Task, TaskState
+    }, schedule_loop::{run_coroutine, run_thread}, set_sp, switch_sp_tratrampoline
 };
 use heapless::vec::Vec;
 use vdso_helper::get_vvar_data;
@@ -24,13 +21,13 @@ fn get_stack_type(stack_base: usize) -> usize {
 
 #[no_mangle]
 #[unsafe(naked)]
-unsafe extern "C" fn coroutine_trampoline() -> ! {
+pub(crate) unsafe extern "C" fn coroutine_trampoline() -> ! {
     switch_sp_tratrampoline!(run_coroutine)
 }
 
 #[no_mangle]
 #[unsafe(naked)]
-unsafe extern "C" fn thread_trampoline() -> ! {
+pub(crate) unsafe extern "C" fn thread_trampoline() -> ! {
     switch_sp_tratrampoline!(run_thread)
 }
 

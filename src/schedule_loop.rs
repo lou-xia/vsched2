@@ -7,10 +7,7 @@
 use core::task::Poll;
 
 use crate::{
-    current::{get_current_task, STACK_HANDLER},
-    interface::{Context, ContextVirtImpl, SMPVirtImpl, Task, TaskState, TaskVirtImpl, SMP},
-    set_pre_stack, set_user_pre_stack,
-    jump_to_trampoline,
+    current::{STACK_HANDLER, get_current_task}, interface::{Context, ContextVirtImpl, SMP, SMPVirtImpl, Task, TaskState, TaskVirtImpl}, jump_to_trampoline, set_pre_stack, set_user_pre_stack, stack::{coroutine_trampoline, thread_trampoline}
 };
 use vdso_helper::get_vvar_data;
 
@@ -187,11 +184,6 @@ pub extern "C" fn utok_schedule() -> usize {
 /// ```
 #[no_mangle]
 pub extern "C" fn run_task(privilege: usize, stack_status: usize) -> usize {
-    let in_kernel = privilege == 0;
-    // let ret_addr: usize;
-    // unsafe {
-    //     core::arch::asm!("mv {}, ra", out(reg) ret_addr);
-    // }
     if get_current_task().is_coroutine() {
         // 切换或回收栈
         let new_sp = {
@@ -273,7 +265,7 @@ pub extern "C" fn krun_utask(stack_status: usize) {
 ///     - 0: 内核态
 ///     - 1: 用户态
 #[no_mangle]
-unsafe extern "C" fn run_coroutine() -> usize {
+pub(crate) unsafe extern "C" fn run_coroutine() -> usize {
     get_current_task().set_state(TaskState::Running);
     let res = get_current_task().poll();
     // ************** 协程主动让权的入口 **************
@@ -300,7 +292,7 @@ unsafe extern "C" fn run_coroutine() -> usize {
 
 /// 运行线程
 #[no_mangle]
-unsafe extern "C" fn run_thread() -> ! {
+pub(crate) unsafe extern "C" fn run_thread() -> ! {
     get_current_task().set_state(TaskState::Running);
     get_current_task().restore_context();
     unreachable!();
@@ -308,7 +300,7 @@ unsafe extern "C" fn run_thread() -> ! {
 
 /// 从内核态运行用户态的协程
 #[no_mangle]
-unsafe extern "C" fn run_coroutine_into_user(user_sp: usize) -> ! {
+pub(crate) unsafe extern "C" fn run_coroutine_into_user(user_sp: usize) -> ! {
     // todo：把user_sp传入into_user里
     ContextVirtImpl::into_user();
     unreachable!();

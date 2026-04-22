@@ -4,12 +4,19 @@
 //!
 //! 几个函数的运行顺序：`trap_entry` -> `run_task`，`schedule` -> `run_task`，之后在`schedule`和`run_task`中循环，使用`jmp`相互跳转实现循环
 
-use core::task::Poll;
+use core::{sync::atomic::Ordering, task::Poll};
 
 use crate::{
+    current::{get_current_task, get_user_data, set_current_task, STACK_HANDLER, USER_SCHEDULER},
+    interface::{
+        Context, ContextVirtImpl, SMPVirtImpl, Task, TaskState, TaskVirtImpl, VSpace,
+        VSpaceVirtImpl, SMP,
+    },
+    jump_to_trampoline,
+    scheduler::Scheduler,
     current::{STACK_HANDLER, get_current_task}, interface::{Context, ContextVirtImpl, SMP, SMPVirtImpl, Task, TaskState, TaskVirtImpl}, jump_to_trampoline, set_pre_stack, set_user_pre_stack, stack::{coroutine_trampoline, thread_trampoline}
 };
-use vdso_helper::get_vvar_data;
+use vdso_helper::{get_vvar_data, vvar_data};
 
 /// 同步trap入口
 ///
@@ -82,19 +89,6 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
 /// 目前该函数只有判断当前特权级并返回的功能。
 #[no_mangle]
 pub extern "C" fn thread_entry() -> usize {
-    // // 由于jump在语法上并未结束这个函数，函数内部的局部变量可能无法及时释放。
-    // //
-    // // 因此，需要将jump之前的代码用代码块包裹起来，仅将jump所需的判断条件以基本类型的形式传出代码块。
-    // let in_kernel = {
-    //     // 该代码块为除跳转以外的函数主要逻辑
-    //     get_current_task().save_thread_context();
-    //     get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].load(core::sync::atomic::Ordering::Acquire)
-    // };
-    // if in_kernel {
-    //     reset_stack_and_jump!(kschedule);
-    // } else {
-    //     reset_stack_and_jump!(uschedule);
-    // }
     let in_kernel = get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()]
         .load(core::sync::atomic::Ordering::Acquire);
     if in_kernel {
@@ -122,7 +116,18 @@ pub extern "C" fn trap_handle() {
 /// - 1: 需要进入`krun_utask`
 #[no_mangle]
 pub extern "C" fn kschedule() -> usize {
-    todo!()
+    let scheduler = unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
+    let current_pid = scheduler.global_index();
+    assert!(current_pid == 0);
+    push_prev_task(scheduler);
+    loop {
+        let next_pid = process_schedule(scheduler);
+
+        let res = ktask_schedule(next_pid);
+        if res != 2 {
+            break res;
+        }
+    }
 }
 
 /// 用户进程的调度与地址空间、特权级切换函数
@@ -147,7 +152,98 @@ pub extern "C" fn uschedule(stack_status: usize) {
 /// - 1: 需要进入`krun_utask`
 #[no_mangle]
 pub extern "C" fn utok_schedule() -> usize {
-    todo!()
+    let mut next_pid =
+        get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].load(Ordering::Acquire);
+    loop {
+        let res = ktask_schedule(next_pid);
+        if res != 2 {
+            break res;
+        }
+
+        let scheduler = unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
+        next_pid = process_schedule(scheduler);
+    }
+}
+
+/// 切换地址空间，只会在内核态调用
+fn switch_vspace(vspace_pid: usize) {
+    let prev_vspace_pid =
+        get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].swap(vspace_pid, Ordering::AcqRel);
+    if vspace_pid != prev_vspace_pid {
+        let vspace_ptr = get_vvar_data!(PROCESS_INFO_TABLE).table[vspace_pid]
+            .vspace
+            .load(Ordering::Acquire);
+        let vspace = unsafe { *vspace_ptr };
+        // 切换地址空间理论上不会影响代码的执行，因为此处的数据均位于内核子空间中，而切换只会影响到用户子空间。
+        // 需要确认？
+        VSpaceVirtImpl::into_vspace(vspace);
+    }
+}
+
+/// 将上一任务放回调度器
+fn push_prev_task(current_scheduler: &Scheduler) {
+    let current_task = get_current_task();
+    if current_task.state() == TaskState::Ready {
+        todo!("实现就绪队列");
+        current_scheduler.ready_queue.push(current_task.to_ptr());
+    }
+}
+
+/// 1. 更新当前调度器最高优先级
+/// 2. 选择优先级最高的进程
+///
+/// 返回值：下一个任务所在的进程id
+fn process_schedule(current_scheduler: &Scheduler) -> usize {
+    let prio = current_scheduler.hightest_priority();
+    let pid = current_scheduler.global_index();
+    get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
+        .highest_prio
+        .store(prio, Ordering::Release);
+    get_vvar_data!(PROCESS_INFO_TABLE).highest_prio_process(pid)
+}
+
+/// 仅内核态调用，决定了运行next_pid进程后的工作：
+///
+/// 1. 从调度器获取下一任务、更新调度器的最高优先级
+/// 2. 设置CURRENT_VSPACE、切换地址空间（1、2的顺序可能反过来，取决于是用户调度器还是内核调度器）
+/// 3. 设置下一任务状态为Running、设置CURRENT_TASK。
+///
+/// 返回值：
+///
+/// - 0：接下来调用run_task
+/// - 1：接下来调用krun_utask
+/// - 2：未获取到任务，需要重新获取任务后重新调用ktask_schedule。
+fn ktask_schedule(next_pid: usize) -> usize {
+    if next_pid == 0 {
+        // 从当前调度器获取下一任务并运行
+        let kscheduler = unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
+        if let (Some(next_task), new_prio) = kscheduler.take_task() {
+            get_vvar_data!(PROCESS_INFO_TABLE).table[0]
+                .highest_prio
+                .store(new_prio, Ordering::Release);
+            switch_vspace(next_task.pid());
+            next_task.set_state(TaskState::Running);
+            set_current_task(next_task);
+            return 0; // 一定是内核态任务
+        } else {
+            return 2;
+        }
+    } else {
+        // 切换地址空间和调度器后获取下一任务并运行
+        switch_vspace(next_pid);
+
+        let uscheduler = unsafe { get_user_data(&USER_SCHEDULER) };
+        if let (Some(next_task), new_prio) = uscheduler.take_task() {
+            get_vvar_data!(PROCESS_INFO_TABLE).table[next_pid]
+                .highest_prio
+                .store(new_prio, Ordering::Release);
+            next_task.set_state(TaskState::Running);
+            set_current_task(next_task);
+            return 1; // 一定是用户态任务
+        } else {
+            return 2;
+        }
+    }
 }
 
 /// 运行当前地址空间和特权级中的任务

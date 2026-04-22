@@ -14,6 +14,25 @@ trait_interface! {
         ///
         /// 根据最新保存的上下文类型不同，线程和协程可以互相转化
         fn is_coroutine(&self) -> bool;
+        /// 获取任务所处的进程id，也就是任务所处地址空间的所属进程的id，
+        /// 因此某些内核态任务也可能属于某个进程。
+        ///
+        /// 如果之前未对该任务调用过`set_pid`，则返回0。否则，返回上一次`set_pid`传入的值。
+        ///
+        /// 目前，因为该字段仅用于获取内核任务所处的地址空间，
+        /// 且因为任务的创建由os负责，无法在每个任务创建时均设置其pid，
+        /// 所以仅对于由进程创建的内核态任务（如同步/异步trap处理任务），
+        /// 我们会使用`set_pid`设置其pid，
+        /// 也只有对这些任务调用`pid`才能获得有效的值。
+        ///
+        /// 此处的进程id即为全局进程表`PROCESS_INFO_TABLE`的索引
+        fn pid(&self) -> usize;
+        /// 设置任务的pid，也就是任务所处地址空间的所属进程的id，
+        /// 此处的进程id即为全局进程表`PROCESS_INFO_TABLE`的索引。
+        ///
+        /// 目前仅对于由进程创建的内核态任务（如同步/异步trap处理任务）调用，
+        /// 因此只有对这些任务调用`pid`才能获得有效的值。
+        fn set_pid(&self, pid: usize);
         /// 保存线程上下文
         fn save_thread_context(&self);
         /// 保存trap上下文
@@ -81,6 +100,16 @@ trait_interface! {
     pub trait SMP {
         /// 获取当前cpuid
         fn cpu_id() -> usize;
+    }
+}
+
+trait_interface! {
+    /// 地址空间相关接口
+    pub trait VSpace {
+        /// 切换地址空间
+        ///
+        /// 地址空间使用`*mut ()`表示，即为`ProcessInfo`中的`vspace`中的内容。
+        fn into_vspace(vspace: *mut ());
     }
 }
 

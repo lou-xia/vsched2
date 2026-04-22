@@ -11,7 +11,7 @@ use spin::mutex::SpinMutex;
 use vdso_helper::{get_vvar_data, vvar_data};
 
 use crate::{
-    interface::{CPU_NUM, ContextVirtImpl, SMP, SMPVirtImpl, TaskVirtImpl},
+    interface::{ContextVirtImpl, SMPVirtImpl, TaskVirtImpl, CPU_NUM, SMP},
     scheduler::{ProcessInfoTable, Scheduler},
     stack::{StackHandler, StackWapper},
 };
@@ -41,16 +41,26 @@ vvar_data! {
     /// 进程号即为全局进程表中的索引。
     ///
     /// 若位于内核，则进程号为当前地址空间所属进程的进程号。
-    /// （这一点与调度器中不同，因为内核态任务可以属于多个地址空间，但使用同一个调度器。）
+    /// （这一点与调度器中不同，因为同一个调度器可以包含属于多个地址空间的内核态任务。）
+    ///
+    /// 该变量同时指示了当前地址空间和当前调度器，因此当两者产生分歧时，该变量的行为如下：
+    ///
+    /// 1. 当前在内核，下一任务为用户任务时，当前地址空间和当前调度器统一。在修改CURRENT_VSPACE后立刻切换地址空间，
+    /// 之后从地址空间中获取用户调度器，并取出用户任务。
+    /// 2. 当前在内核，下一任务为内核任务时，CURRENT_VSPACE设置为内核任务所在的地址空间所属进程的进程号后立刻切换地址空间。
+    /// 仅在该内核任务所在的地址空间也为内核空间时，CURRENT_VSPACE为0。
+    /// 3. 当前在用户态，由于其它调度器优先级更高而即将陷入内核时：先将CURRENT_VSPACE设置为下一个任务所在调度器的pid，
+    /// 进入内核后，再参照第1、2条的情况，进行CURRENT_VSPACE的修正和地址空间的实际切换，
+    /// 之后CURRENT_VSPACE即代表当前的地址空间。
     CURRENT_VSPACE: [AtomicUsize; CPU_NUM],
     /// 全局进程表，实现为非perCPU的共享数据。
     ///
     /// 存储了进程的最高优先级（全局共享）和地址空间（仅内核态访问），且承担了分配进程号的功能。
     PROCESS_INFO_TABLE: ProcessInfoTable,
     /// 内核栈，实现为非perCPU的共享数据。
-    /// 
+    ///
     /// 每个CPU分配一个内核栈，在trap时作为trap处理协程的栈使用
-    /// 
+    ///
     /// TODO：考虑内核任务支持线程接口
     KERNEL_STACKS: SpinMutex<StackHandler>,
 }
@@ -72,3 +82,12 @@ pub(crate) static USER_SCHEDULER: LazyInit<Scheduler> = LazyInit::new();
 
 /// 当前进程的栈池，实现为非perCPU的私有数据。
 pub(crate) static STACK_HANDLER: LazyInit<SpinMutex<StackHandler>> = LazyInit::new();
+
+/// 从内核中访问当前地址空间的用户态vDSO私有数据
+///
+/// 因为即使在一个地址空间中，用户态和内核态的vDSO私有数据也是分开的，因此需要借助这个函数进行地址运算，获得用户态对应数据的引用。
+///
+/// 因为访问的是用户态子空间的数据，因此不能在切换地址空间前后访问该函数返回的同一份引用。
+pub(crate) unsafe fn get_user_data<T>(kernel_ref: &T) -> &T {
+    todo!();
+}

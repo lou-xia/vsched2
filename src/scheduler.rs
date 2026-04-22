@@ -125,12 +125,19 @@ impl Scheduler {
             (Some(unsafe { TaskVirtImpl::from_ptr(task) }), prio)
         }
     }
+
+    /// 获取全局进程表中的索引/进程号，只读
+    pub(crate) fn global_index(&self) -> usize {
+        self.global_index
+    }
 }
 
 /// 以进程号为索引的数组，存储每个进程的信息
+///
+/// 数组中至少有一个元素（内核）。
 pub(crate) struct ProcessInfoTable {
     /// 数组
-    table: [ProcessInfo; PROCESS_NUM],
+    pub(crate) table: [ProcessInfo; PROCESS_NUM],
     /// 下一个分配的进程索引
     ///
     /// 分配索引时，先使用该索引分配进程号，然后将其加1。若该值超过数组长度，则对PROCESS_NUM取模。
@@ -150,12 +157,12 @@ pub(crate) struct ProcessInfo {
     /// 有效位，用于表示全局进程表中的该索引是否被占用
     valid: AtomicBool,
     /// 进程最高优先级，跨地址空间和特权级共享
-    highest_prio: AtomicIsize,
+    pub(crate) highest_prio: AtomicIsize,
     /// 进程的地址空间
     ///
     /// AtomicPtr指向的内容（`*mut ()`）为存储在内核空间的页表根节点，
     /// 通过这种方式限制地址空间信息只能在内核态访问。
-    vspace: AtomicPtr<*mut ()>,
+    pub(crate) vspace: AtomicPtr<*mut ()>,
 }
 
 impl Default for ProcessInfoTable {
@@ -188,7 +195,7 @@ impl ProcessInfoTable {
             if !self.table[index].valid.swap(true, Ordering::AcqRel) {
                 return Some(index);
             }
-            index = (index + 1) % PROCESS_NUM;
+            index = self.next_index.fetch_add(1, Ordering::AcqRel) % PROCESS_NUM;
             if index == start_index {
                 return None;
             }
@@ -198,5 +205,43 @@ impl ProcessInfoTable {
     /// 注销一个进程号，返回是否成功注销
     pub fn unregister_process(&self, index: usize) -> bool {
         self.table[index].valid.swap(false, Ordering::AcqRel)
+    }
+
+    /// 获取最高优先级的进程。
+    ///
+    /// 如果当前进程是最高优先级的进程之一，则返回当前进程。
+    ///
+    /// 若不是，则暂未规定以什么方式从所有最高优先级的进程中选择一个。
+    pub fn highest_prio_process(&self, current_process: usize) -> usize {
+        let next_index = self.next_index.load(Ordering::Acquire);
+        let start = if next_index >= PROCESS_NUM {
+            next_index - PROCESS_NUM
+        } else {
+            0
+        };
+        let end = next_index;
+
+        let mut highest_prio: isize = isize::MAX;
+        let mut processes: Vec<usize, PROCESS_NUM> = Vec::new();
+        for i in start..end {
+            if !self.table[i].valid.load(Ordering::Acquire) {
+                continue;
+            }
+            let prio = self.table[i].highest_prio.load(Ordering::Acquire);
+            if !self.table[i].valid.load(Ordering::Acquire) {
+                continue;
+            }
+            if prio < highest_prio {
+                highest_prio = prio;
+                processes = Vec::from([i]);
+            } else if prio == highest_prio {
+                processes.push(i);
+            }
+        }
+        if processes.contains(&current_process) {
+            current_process
+        } else {
+            processes[0]
+        }
     }
 }

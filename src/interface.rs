@@ -10,6 +10,8 @@ trait_interface! {
         fn state(&self) -> TaskState;
         /// 设置任务状态
         fn set_state(&self, state: TaskState) -> TaskState;
+        /// 任务优先级
+        fn priority(&self) -> isize;
         /// 判断任务为线程或协程，依据是保存的上下文类型
         ///
         /// 根据最新保存的上下文类型不同，线程和协程可以互相转化

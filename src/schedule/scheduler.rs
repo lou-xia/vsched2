@@ -1,31 +1,93 @@
 //! 调度器
 
+use core::marker::PhantomPinned;
+
 use heapless::Vec;
+use lazyinit::LazyInit;
+// use pinned_init::{pin_data, pin_init, PinInit};
 use spin::rwlock::RwLock;
 
-use super::event_source::EventSorceVtable;
-use crate::interface::{SMPVirtImpl, TaskVirtImpl, EVENT_SORCE_NUM, SMP};
+use super::event_source::{EventSorce, EventSorceVtable};
+use crate::{
+    interface::{SMPVirtImpl, TaskVirtImpl, EVENT_SORCE_NUM, SMP},
+    schedule::ready_queue::ReadyQueue,
+};
 
 /// 调度器数据结构
 ///
 /// 每个进程的用户部分持有一个调度器实例；所有内核任务共享一个调度器实例。
+// #[pin_data]
 pub(crate) struct Scheduler {
     /// 事件源数组
     ///
     /// 当前的RwLock仅保护事件源插入（申请写锁）与事件源查询（申请读锁）的冲突，并未保护多个事件源查询操作间的同步问题。
     ///
     /// 也就是要求事件源自身实现内部可变性和与之适配的同步机制。
+    ///
+    /// `source`的`index=0`处一定为就绪队列。
+    // #[pin]
     sources: RwLock<Vec<(*const (), EventSorceVtable), EVENT_SORCE_NUM>>,
     /// 全局进程表中的索引，同时作为进程号使用
     ///
     /// 内核调度器固定为0
     global_index: usize,
+    /// 就绪队列
+    ///
+    /// 由于其同时放在了事件源数组中，因此在Scheduler结构中产生了自引用，需要声明为`!Unpin`。
+    ///
+    /// 放入任务时，使用就绪队列的接口；取出任务时，使用事件源的接口。
+    ready_queue: ReadyQueue,
+    // #[pin]
+    _pin: PhantomPinned,
 }
 
 unsafe impl Send for Scheduler {}
 unsafe impl Sync for Scheduler {}
 
 impl Scheduler {
+    // const fn new(global_index: usize) -> impl PinInit<Self> {
+    //     let ready_queue = ReadyQueue::new();
+    //     // let mut sources = Vec::new();
+    //     // sources
+    //     //     .push((
+    //     //         &ready_queue as *const ReadyQueue as *const (),
+    //     //         ReadyQueue::vtable(),
+    //     //     ))
+    //     //     .unwrap();
+    //     pin_init!(&this in Self {
+    //         sources <- unsafe {
+    //             let mut sources = Vec::new();
+    //             sources
+    //                 .push((
+    //                     &((*(this.as_ptr())).ready_queue) as *const ReadyQueue as *const (),
+    //                     ReadyQueue::vtable(),
+    //                 ))
+    //                 .unwrap();
+    //             RwLock::new(sources)
+    //         },
+    //         global_index,
+    //         ready_queue,
+    //         _pin: PhantomPinned,
+    //     })
+    // }
+    fn init(self_ref: &LazyInit<Self>, global_index: usize) {
+        let ready_queue = ReadyQueue::new();
+        self_ref.init_once(Self {
+            sources: RwLock::new(Vec::new()),
+            global_index,
+            ready_queue,
+            _pin: PhantomPinned,
+        });
+        self_ref
+            .sources
+            .write()
+            .push((
+                &self_ref.ready_queue as *const ReadyQueue as *const (),
+                ReadyQueue::vtable(),
+            ))
+            .unwrap();
+    }
+
     /// 注册事件源
     ///
     /// index参数为事件源的插入位置，在获取到的最高优先级相同时，优先选择位置靠前的事件源。
@@ -67,10 +129,11 @@ impl Scheduler {
     ///
     /// 若没有事件源，返回`isize::MAX`；若有事件源但没有就绪任务，返回比最低优先级更低一级的优先级。
     pub(crate) fn hightest_priority(&self) -> isize {
+        let cpu_id = SMPVirtImpl::cpu_id();
         let sources = self.sources.read();
         sources
             .iter()
-            .map(|(ptr, vtable)| (vtable.hightest_priority)(*ptr))
+            .map(|(ptr, vtable)| (vtable.hightest_priority)(*ptr, cpu_id))
             .fold(isize::MAX, |a, b| if a < b { a } else { b })
     }
 
@@ -82,11 +145,12 @@ impl Scheduler {
     /// - 取出就绪任务后事件源中就绪任务的最高优先级。
     ///     - 若没有事件源，则返回`isize::MAX`；
     ///     - 若有事件源但没有就绪任务，返回比最低优先级更低一级的优先级。
-    pub(crate) fn take_task(&self) -> (Option<&TaskVirtImpl>, isize) {
+    pub(crate) fn pop_task(&self) -> (Option<&TaskVirtImpl>, isize) {
+        let cpu_id = SMPVirtImpl::cpu_id();
         let sources = self.sources.read();
         let ((first_index, first_prio), (_second_index, second_prio)) = sources
             .iter()
-            .map(|(ptr, vtable)| (vtable.hightest_priority)(*ptr))
+            .map(|(ptr, vtable)| (vtable.hightest_priority)(*ptr, cpu_id))
             .enumerate()
             .fold(
                 ((usize::MAX, isize::MAX), (usize::MAX, isize::MAX)),
@@ -105,7 +169,6 @@ impl Scheduler {
             return (None, isize::MAX);
         }
 
-        let cpu_id = SMPVirtImpl::cpu_id();
         let (task, new_prio) = (sources[first_index].1.take_task)(sources[first_index].0, cpu_id);
         if task.is_null() {
             assert!(new_prio == first_prio);
@@ -123,5 +186,13 @@ impl Scheduler {
     /// 获取全局进程表中的索引/进程号，只读
     pub(crate) fn global_index(&self) -> usize {
         self.global_index
+    }
+
+    /// 向就绪队列中放入任务
+    pub(crate) fn push_task(
+        &self,
+        task: &'static TaskVirtImpl,
+    ) -> Result<(), &'static TaskVirtImpl> {
+        self.ready_queue.push(task)
     }
 }

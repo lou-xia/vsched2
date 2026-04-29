@@ -2,6 +2,5 @@
 
 pub mod event_source;
 pub mod process_info;
+pub mod ready_queue;
 pub mod scheduler;
-
-// todo: 实现就绪队列

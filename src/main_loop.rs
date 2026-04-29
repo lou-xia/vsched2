@@ -202,8 +202,7 @@ fn switch_vspace(vspace_pid: usize) {
 fn push_prev_task(current_scheduler: &Scheduler) {
     let current_task = get_current_task();
     if current_task.state() == TaskState::Ready {
-        todo!("实现就绪队列");
-        // current_scheduler.ready_queue.push(current_task.to_ptr());
+        current_scheduler.push_task(current_task);
     }
 }
 
@@ -235,7 +234,7 @@ fn ktask_schedule(next_pid: usize) -> usize {
     if next_pid == 0 {
         // 从当前调度器获取下一任务并运行
         let kscheduler = unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
-        if let (Some(next_task), new_prio) = kscheduler.take_task() {
+        if let (Some(next_task), new_prio) = kscheduler.pop_task() {
             get_vvar_data!(PROCESS_INFO_TABLE).table[0]
                 .highest_prio
                 .store(new_prio, Ordering::Release);
@@ -251,7 +250,7 @@ fn ktask_schedule(next_pid: usize) -> usize {
         switch_vspace(next_pid);
 
         let uscheduler = unsafe { get_user_data(&USER_SCHEDULER) };
-        if let (Some(next_task), new_prio) = uscheduler.take_task() {
+        if let (Some(next_task), new_prio) = uscheduler.pop_task() {
             get_vvar_data!(PROCESS_INFO_TABLE).table[next_pid]
                 .highest_prio
                 .store(new_prio, Ordering::Release);
@@ -278,7 +277,7 @@ fn utask_schedule(next_pid: usize, stack_status: usize) -> usize {
     let current_pid = uscheduler.global_index();
     if next_pid == current_pid {
         // 从当前调度器获取下一任务并运行
-        if let (Some(next_task), new_prio) = uscheduler.take_task() {
+        if let (Some(next_task), new_prio) = uscheduler.pop_task() {
             get_vvar_data!(PROCESS_INFO_TABLE).table[current_pid]
                 .highest_prio
                 .store(new_prio, Ordering::Release);

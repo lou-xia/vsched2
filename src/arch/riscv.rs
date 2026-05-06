@@ -25,27 +25,27 @@
 
 use core::arch::global_asm;
 
-// 全局宏定义，用于兼容32位和64位的差异
-#[cfg(target_arch = "riscv32")]
-global_asm!(
-    r#"
-    .macro lx arg1, arg2
-        lw \arg1, \arg2
-    .endm
-    .set XLEN, 4
-    "#,
-);
+// // 全局宏定义，用于兼容32位和64位的差异
+// #[cfg(target_arch = "riscv32")]
+// global_asm!(
+//     r#"
+//     .macro lx arg1, arg2
+//         lw \arg1, \arg2
+//     .endm
+//     .set XLEN, 4
+//     "#,
+// );
 
-// 全局宏定义，用于兼容32位和64位的差异
-#[cfg(target_arch = "riscv64")]
-global_asm!(
-    r#"
-    .macro lx arg1, arg2
-        ld \arg1, \arg2
-    .endm
-    .set XLEN, 8
-    "#,
-);
+// // 全局宏定义，用于兼容32位和64位的差异
+// #[cfg(target_arch = "riscv64")]
+// global_asm!(
+//     r#"
+//     .macro lx arg1, arg2
+//         ld \arg1, \arg2
+//     .endm
+//     .set XLEN, 8
+//     "#,
+// );
 
 /// 封装跳转指令以适配不同架构。
 ///

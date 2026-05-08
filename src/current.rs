@@ -78,18 +78,21 @@ pub(crate) static USER_SCHEDULER: LazyInit<Scheduler> = LazyInit::new();
 /// 当前进程的栈池，实现为非perCPU的私有数据。
 pub(crate) static STACK_HANDLER: LazyInit<SpinMutex<StackHandler>> = LazyInit::new();
 
-/// 从内核中访问当前地址空间的用户态vDSO私有数据
+/// 从内核中访问用户空间的用户态vDSO私有数据
+///
+/// 若vspace为None，则访问当前地址空间的用户态vDSO私有数据；否则访问指定地址空间的用户态vDSO私有数据。
 ///
 /// 因为即使在一个地址空间中，用户态和内核态的vDSO私有数据也是分开的，因此需要借助这个函数进行地址运算，获得用户态对应数据的引用。
 ///
 /// # Safety
 ///
+/// - 调用此函数前，目标用户空间需要已经映射和加载vDSO。
 /// - 因为访问的是用户态子空间的数据，因此不能在切换地址空间前后访问该函数返回的同一份引用。
-pub(crate) unsafe fn get_user_data<T>(data: &T) -> &T {
+pub(crate) unsafe fn get_user_data<T>(data: &T, vspace: Option<*mut ()>) -> &T {
     let kernel_addr = data as *const T as usize;
     let len = core::mem::size_of::<T>();
 
-    let user_ptr = UserDataVirtImpl::get_user_data(kernel_addr, len);
+    let user_ptr = UserDataVirtImpl::get_user_data(kernel_addr, len, vspace);
     assert!(
         !user_ptr.is_null(),
         "UserData::get_user_data returned a null pointer"

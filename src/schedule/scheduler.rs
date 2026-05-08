@@ -16,7 +16,11 @@ use crate::{
 /// 调度器数据结构
 ///
 /// 每个进程的用户部分持有一个调度器实例；所有内核任务共享一个调度器实例。
-// #[pin_data]
+///
+/// TODO: Scheudler目前存在的问题：
+///
+/// 1. 初始化时从另一个地址空间访问，导致自引用的指针错误。
+/// 2. 在内核态创建用户进程时，难以将新任务放入用户进程的调度器。
 pub(crate) struct Scheduler {
     /// 事件源数组
     ///
@@ -70,7 +74,7 @@ impl Scheduler {
     //         _pin: PhantomPinned,
     //     })
     // }
-    fn init(self_ref: &LazyInit<Self>, global_index: usize) {
+    pub(crate) fn init(self_ref: &LazyInit<Self>, global_index: usize) {
         let ready_queue = ReadyQueue::new();
         self_ref.init_once(Self {
             sources: RwLock::new(Vec::new()),

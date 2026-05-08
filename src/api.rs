@@ -1,0 +1,168 @@
+use core::sync::atomic::Ordering;
+
+use spin::mutex::SpinMutex;
+use vdso_helper::get_vvar_data;
+
+use crate::{
+    current::{get_user_data, STACK_HANDLER, USER_SCHEDULER},
+    schedule::scheduler::Scheduler,
+    stack::{StackHandler, StackWapper},
+    SMPVirtImpl, SMP,
+};
+
+/// 在内核的主核心调用的调度器初始化接口。
+///
+/// 需要调用该函数之后，才能打开中断，因为中断的处理设计本模块的任务调度功能。
+///
+/// 该函数不会切换任务。初始化完成后若需切换任务，则需再调用`reschedule`函数。
+///
+/// 参数：
+///
+/// - `init_stack_base`：内核初始化使用的栈（也就是当前栈）的基址，该栈需要可以通过Stack::dealloc回收。
+/// - `init_task_ptr`：内核初始化执行流（当前执行流）所属的任务指针。需要内核先创建该任务，再将其指针传入该函数中。
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_init_main(init_stack_base: *const (), init_task_ptr: *const ()) {
+    // 调度器初始化，虽然名称是USER_SCHEDULER，但它是内核调度器的实例，且在内核空间中存储和使用。
+    Scheduler::init(&USER_SCHEDULER, 0);
+    get_vvar_data!(KERNEL_SCHEDULER).store(
+        USER_SCHEDULER.get().unwrap() as *const Scheduler as *mut Scheduler,
+        Ordering::Release,
+    );
+
+    // 初始化CURRENT_TASK
+    get_vvar_data!(CURRENT_TASK)[SMPVirtImpl::cpu_id()]
+        .store(init_task_ptr as *mut (), Ordering::Release);
+
+    // 初始化IN_KERNEL
+    get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].store(true, Ordering::Release);
+
+    // 初始化CURRENT_VSPACE
+    get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].store(0, Ordering::Release);
+
+    // PROCESS_INFO_TABLE无需初始化，因为其默认值已经包含了一个有效的内核进程。
+
+    // 内核态不需要初始化STACK_HANDLER，但需初始化KERNEL_STACKS中的current_stack
+    get_vvar_data!(KERNEL_STACKS).lock().current_stack[SMPVirtImpl::cpu_id()] =
+        Some(StackWapper::from_raw(init_stack_base as usize));
+}
+
+/// 在内核的副核心调用的调度器初始化接口。
+///
+/// 需要调用该函数之后，才能打开中断，因为中断的处理设计本模块的任务调度功能。
+///
+/// 该函数不会切换任务。初始化完成后若需切换任务，则需再调用`reschedule`函数。
+///
+/// 参数：
+///
+/// - `init_stack_base`：内核初始化使用的栈（也就是当前栈）的基址，该栈需要可以通过Stack::dealloc回收。
+/// - `init_task_ptr`：内核初始化执行流（当前执行流）所属的任务指针。需要内核先创建该任务，再将其指针传入该函数中。
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_init_secondary(init_stack_base: *const (), init_task_ptr: *const ()) {
+    // 不需初始化调度器，因为其已由`kernel_init_main`在主核心中初始化，并通过vDSO在所有核心中共享。
+
+    // 初始化CURRENT_TASK
+    get_vvar_data!(CURRENT_TASK)[SMPVirtImpl::cpu_id()]
+        .store(init_task_ptr as *mut (), Ordering::Release);
+
+    // 初始化IN_KERNEL
+    get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].store(true, Ordering::Release);
+
+    // 初始化CURRENT_VSPACE
+    get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].store(0, Ordering::Release);
+
+    // PROCESS_INFO_TABLE无需初始化，因为其默认值已经包含了一个有效的内核进程。
+
+    // 内核态不需要初始化STACK_HANDLER，但需初始化KERNEL_STACKS中的current_stack
+    get_vvar_data!(KERNEL_STACKS).lock().current_stack[SMPVirtImpl::cpu_id()] =
+        Some(StackWapper::from_raw(init_stack_base as usize));
+}
+
+/// 在内核态调用的进程初始化接口，每个用户进程初始化一次。
+///
+/// 在调用此函数前，用户进程的地址空间需要已创建完成，且已映射和加载vDSO。
+///
+/// 参数：
+///
+/// - `vspace_ptr`：用户进程的地址空间（页表根节点）的指针的指针，代表该进程所属的地址空间。需要内核先创建该地址空间，并将其指针传入该函数中。
+/// 在实现时，一级指针可以放在TCB等位置，从而和进程一同释放。
+///
+/// 返回值：为该进程分配的pid
+#[unsafe(no_mangle)]
+pub extern "C" fn process_init(vspace_ptr: *mut *mut ()) -> usize {
+    // 初始化PROCESS_INFO_TABLE，分配进程号，填写地址空间。
+    let pid = get_vvar_data!(PROCESS_INFO_TABLE)
+        .register_process()
+        .expect("Failed to register process");
+    get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
+        .vspace
+        .store(vspace_ptr, Ordering::Release);
+    get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
+        .highest_prio
+        .store(isize::MAX, Ordering::Release);
+
+    // 初始化用户态vDSO私有数据。
+    // 需要在此处初始化的原因是需要初始化进程调度器，之后才能将该进程的任务放入调度器中。
+    let vspace = unsafe { *vspace_ptr };
+    let user_scheduler = unsafe { get_user_data(&USER_SCHEDULER, Some(vspace)) };
+    Scheduler::init(user_scheduler, pid);
+    let stack_handler = unsafe { get_user_data(&STACK_HANDLER, Some(vspace)) };
+    stack_handler.init_once(SpinMutex::new(StackHandler::default()));
+    pid
+}
+
+/// 在内核态调用的进程销毁接口。
+///
+/// 目前只会释放进程表中的对应项。不会回收地址空间等资源，需要os负责回收。
+#[unsafe(no_mangle)]
+pub extern "C" fn process_drop(pid: usize) {
+    get_vvar_data!(PROCESS_INFO_TABLE).unregister_process(pid);
+}
+
+// 在build_vdso中增加了暴露extern "C"函数的功能，通过以下的写法可以暴露汇编函数接口。
+// 在os中使用时，不使用同名函数，而是直接从vtable中获取函数指针，从而避免多余的跳转和函数调用接口的适配。
+// 以下函数可能有参数。接口见相应的汇编实现。
+extern "C" {
+    pub fn raw_trap_entry() -> !;
+    pub fn raw_thread_entry() -> !;
+    pub fn raw_run_task() -> !;
+    pub fn raw_kschedule() -> !;
+}
+
+// /// 在用户态调用的调度器初始化接口，每个用户进程初始化一次。
+// ///
+// /// 该函数不会切换任务。初始化完成后若需切换任务，则需再调用`reschedule`函数。
+// ///
+// /// 参数：
+// ///
+// /// - `init_stack_base`：用户初始化使用的栈（也就是当前栈）的基址，该栈需要可以通过Stack::dealloc回收。
+// /// - `init_task_ptr`：用户初始化执行流（当前执行流）所属的任务指针。需要用户先创建该任务，再将其指针传入该函数中。
+// ///
+// /// 返回值：为该进程分配的pid
+// #[unsafe(no_mangle)]
+// pub extern "C" fn user_init(init_stack_base: *const (), init_task_ptr: *const ()) -> usize {
+//     // 调度器初始化，虽然名称是USER_SCHEDULER，但它是内核调度器的实例，且在内核空间中存储和使用。
+//     let pid = get_vvar_data!(PROCESS_INFO_TABLE)
+//         .register_process()
+//         .expect("Failed to register process");
+//     Scheduler::init(&USER_SCHEDULER, 0);
+//     get_vvar_data!(KERNEL_SCHEDULER).store(
+//         USER_SCHEDULER.get().unwrap() as *const Scheduler as *mut Scheduler,
+//         Ordering::Release,
+//     );
+
+//     // 初始化CURRENT_TASK
+//     get_vvar_data!(CURRENT_TASK)[SMPVirtImpl::cpu_id()]
+//         .store(init_task_ptr as *mut (), Ordering::Release);
+
+//     // 初始化IN_KERNEL
+//     get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].store(true, Ordering::Release);
+
+//     // 初始化CURRENT_VSPACE
+//     get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].store(0, Ordering::Release);
+
+//     // PROCESS_INFO_TABLE无需初始化，因为其默认值已经包含了一个有效的内核进程。
+
+//     // 内核态不需要初始化STACK_HANDLER，但需初始化KERNEL_STACKS中的current_stack
+//     get_vvar_data!(KERNEL_STACKS).lock().current_stack[SMPVirtImpl::cpu_id()] =
+//         Some(StackWapper::from_raw(init_stack_base as usize));
+// }

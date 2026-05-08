@@ -42,6 +42,7 @@ pub(crate) struct ProcessInfo {
 }
 
 impl Default for ProcessInfoTable {
+    /// 初始化时，已经注册了一个进程（内核），其索引为0，且地址空间指针为空。
     fn default() -> Self {
         let default = Self {
             table: [const {

@@ -256,7 +256,7 @@ fn ktask_schedule(next_pid: usize) -> usize {
         // 切换地址空间和调度器后获取下一任务并运行
         switch_vspace(next_pid);
 
-        let uscheduler = unsafe { get_user_data(&USER_SCHEDULER) };
+        let uscheduler = unsafe { get_user_data(&USER_SCHEDULER, None) };
         if let (Some(next_task), new_prio) = uscheduler.pop_task() {
             get_vvar_data!(PROCESS_INFO_TABLE).table[next_pid]
                 .highest_prio
@@ -383,7 +383,7 @@ pub extern "C" fn run_task(privilege: usize, stack_status: usize) -> usize {
 pub extern "C" fn krun_utask(stack_status: usize) {
     if get_current_task().is_coroutine() {
         let user_sp = {
-            let stack_handler = unsafe { get_user_data(&STACK_HANDLER) };
+            let stack_handler = unsafe { get_user_data(&STACK_HANDLER, None) };
             let mut stack_handler = stack_handler.lock();
             stack_handler.get_empty_stack(stack_status)
         };

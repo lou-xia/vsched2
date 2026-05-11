@@ -432,11 +432,9 @@ pub(crate) unsafe extern "C" fn run_coroutine() -> usize {
             get_current_task().set_state(TaskState::Exited);
         }
         Poll::Pending => {
+            // 协程主动让权时，可能设置了任务状态也可能不设置。在不设置任务状态的情况，在此处设置为`Blocked`状态。
             if get_current_task().state() == TaskState::Running {
                 get_current_task().set_state(TaskState::Blocked);
-            } else {
-                // 不应该有这种情况，所有通过run_task进入的任务都应该是Running态
-                panic!("run_coroutine: current task is not in Running state");
             }
         }
     }

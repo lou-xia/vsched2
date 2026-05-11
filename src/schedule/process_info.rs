@@ -29,7 +29,7 @@ pub(crate) struct ProcessInfoTable {
 /// 因此切换地址空间时自然切换了调度器。
 pub(crate) struct ProcessInfo {
     /// 有效位，用于表示全局进程表中的该索引是否被占用
-    valid: AtomicBool,
+    pub(crate) valid: AtomicBool,
     /// 进程最高优先级，跨地址空间和特权级共享
     pub(crate) highest_prio: AtomicIsize,
     /// 进程的地址空间

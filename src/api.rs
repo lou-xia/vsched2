@@ -7,7 +7,7 @@ use crate::{
     current::{get_user_data, STACK_HANDLER, USER_SCHEDULER},
     schedule::scheduler::Scheduler,
     stack::{StackHandler, StackWapper},
-    SMPVirtImpl, SMP,
+    SMPVirtImpl, TaskVirtImpl, SMP,
 };
 
 /// 在内核的主核心调用的调度器初始化接口。
@@ -144,4 +144,43 @@ pub extern "C" fn user_init() {
 
     // 用户态不需要初始化CURRENT_TASK、IN_KERNEL、STACK_HANDLER和CURRENT_VSPACE，因为它们在内核态切换到用户态任务时会被正确设置。
     // （TODO: 真的吗？）
+}
+
+/// 将任务放入当前进程、当前特权级的就绪队列。
+///
+/// task指针指向实现了`Task` trait的类型。
+///
+/// 返回值表示是否成功放入。
+#[unsafe(no_mangle)]
+pub extern "C" fn push_task_into_current(task: *const (), pid: usize) -> bool {
+    let scheduler = USER_SCHEDULER.get().unwrap();
+    unsafe { scheduler.push_task(TaskVirtImpl::from_ptr(task)).is_ok() }
+}
+
+/// 将任务放入pid指定的进程的就绪队列。只能在内核调用。
+///
+/// task指针指向实现了`Task` trait的类型。
+///
+/// 返回值表示是否成功放入。
+#[unsafe(no_mangle)]
+pub extern "C" fn push_task_into_process(task: *const (), pid: usize) -> bool {
+    if get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
+        .valid
+        .load(Ordering::Acquire)
+        == false
+    {
+        return false;
+    }
+    let scheduler = get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
+        .scheduler
+        .load(Ordering::Acquire);
+    if scheduler.is_null() {
+        false
+    } else {
+        unsafe {
+            (&*scheduler)
+                .push_task(TaskVirtImpl::from_ptr(task))
+                .is_ok()
+        }
+    }
 }

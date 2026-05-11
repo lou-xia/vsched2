@@ -28,7 +28,10 @@ impl ReadyQueue {
         }
     }
 
-    pub(crate) fn push(&self, task: &'static TaskVirtImpl) -> Result<(), &'static TaskVirtImpl> {
+    pub(crate) fn push_task(
+        &self,
+        task: &'static TaskVirtImpl,
+    ) -> Result<(), &'static TaskVirtImpl> {
         // 放入队列 -> 更新优先级
         let prio = task.priority();
         self.queues[(prio - HIGHEST_PRIORITY) as usize]

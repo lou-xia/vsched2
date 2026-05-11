@@ -226,6 +226,6 @@ impl Scheduler {
         &self,
         task: &'static TaskVirtImpl,
     ) -> Result<(), &'static TaskVirtImpl> {
-        self.ready_queue.push(task)
+        self.ready_queue.push_task(task)
     }
 }

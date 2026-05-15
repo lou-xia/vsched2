@@ -13,7 +13,7 @@ pub mod current;
 #[allow(missing_docs)]
 pub mod interface;
 mod main_loop;
-mod schedule;
+pub mod schedule;
 mod stack;
 
 pub use current::VvarData;

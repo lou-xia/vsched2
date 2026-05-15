@@ -67,7 +67,7 @@ impl ProcessInfoTable {
     /// 分配一个新的进程号，并返回对应的索引
     ///
     /// 若分配成功，则返回Some(索引)；若分配失败（即表中没有空位），则返回None。
-    pub fn register_process(&self) -> Option<usize> {
+    pub(crate) fn register_process(&self) -> Option<usize> {
         let start_index = self.next_i.fetch_add(1, Ordering::AcqRel) % PROCESS_NUM;
         let mut index = start_index;
         loop {
@@ -82,7 +82,7 @@ impl ProcessInfoTable {
     }
 
     /// 注销一个进程号，返回是否成功注销
-    pub fn unregister_process(&self, index: usize) -> bool {
+    pub(crate) fn unregister_process(&self, index: usize) -> bool {
         self.table[index].valid.swap(false, Ordering::AcqRel)
     }
 
@@ -91,7 +91,7 @@ impl ProcessInfoTable {
     /// 如果当前进程是最高优先级的进程之一，则返回当前进程。
     ///
     /// 若不是，则暂未规定以什么方式从所有最高优先级的进程中选择一个。
-    pub fn highest_prio_process(&self, current_process: usize) -> usize {
+    pub(crate) fn highest_prio_process(&self, current_process: usize) -> usize {
         let next_i = self.next_i.load(Ordering::Acquire);
         let start = if next_i >= PROCESS_NUM {
             next_i - PROCESS_NUM

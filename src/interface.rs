@@ -152,5 +152,3 @@ pub enum TaskState {
     Blocked = 2,
     Exited = 3,
 }
-
-pub use crate::schedule::event_source::EventSorceVtable;

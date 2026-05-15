@@ -7,7 +7,7 @@ use spin::mutex::Mutex;
 
 use crate::{
     interface::{Task, TaskVirtImpl, HIGHEST_PRIORITY, LOWEST_PRIORITY, READY_QUEUE_SIZE},
-    schedule::event_source::EventSorce,
+    schedule::event_source::EventSource,
 };
 
 const PRIORITY_LEVELS: usize = (LOWEST_PRIORITY - HIGHEST_PRIORITY) as usize + 1;
@@ -53,7 +53,7 @@ impl ReadyQueue {
     }
 }
 
-impl EventSorce for ReadyQueue {
+impl EventSource for ReadyQueue {
     fn hightest_priority(&self, _cpu_id: usize) -> isize {
         let bitmap = self.prio_bitmap.load(Ordering::Acquire);
         let highest_one = bitmap.highest_one().map_or(-1, |i| i as isize);

@@ -7,7 +7,7 @@
 /// 事件源需要实现内部可变性和与之适配的同步机制
 #[repr(C)]
 #[derive(Debug)]
-pub struct EventSorceVtable {
+pub struct EventSourceVtable {
     /// 获取当前事件源中就绪任务的最高优先级。
     ///
     /// 要求优先级数值越低，优先级越高。若实际调度算法与之相反，可以取相反数后传入接口。
@@ -34,7 +34,7 @@ pub struct EventSorceVtable {
 }
 
 /// 事件源接口的trait形式，实现这个trait可以自动生成vtable
-pub trait EventSorce {
+pub trait EventSource {
     /// 获取当前事件源中就绪任务的最高优先级。
     ///
     /// 要求优先级数值越低，优先级越高。若实际调度算法与之相反，可以取相反数后传入接口。
@@ -58,11 +58,11 @@ pub trait EventSorce {
     fn take_task(&self, cpu_id: usize) -> (*const (), isize);
 
     /// 生成vtable
-    fn vtable() -> EventSorceVtable
+    fn vtable() -> EventSourceVtable
     where
         Self: Sized,
     {
-        EventSorceVtable {
+        EventSourceVtable {
             hightest_priority: |ptr, cpu_id| {
                 let es = unsafe { &*(ptr as *const Self) };
                 es.hightest_priority(cpu_id)

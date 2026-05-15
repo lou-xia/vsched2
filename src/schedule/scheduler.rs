@@ -7,7 +7,7 @@ use lazyinit::LazyInit;
 // use pinned_init::{pin_data, pin_init, PinInit};
 use spin::rwlock::RwLock;
 
-use super::event_source::{EventSorce, EventSorceVtable};
+use super::event_source::{EventSource, EventSourceVtable};
 use crate::{
     interface::{SMPVirtImpl, TaskVirtImpl, EVENT_SORCE_NUM, SMP},
     schedule::ready_queue::ReadyQueue,
@@ -27,7 +27,7 @@ pub(crate) struct Scheduler {
     ///
     /// 事件源的指针为用户空间中的地址，因此在内核中访问时需要经过地址转换。
     // #[pin]
-    sources: RwLock<Vec<(*const (), EventSorceVtable), EVENT_SORCE_NUM>>,
+    sources: RwLock<Vec<(*const (), EventSourceVtable), EVENT_SORCE_NUM>>,
     /// 全局进程表中的索引，同时作为进程号使用
     ///
     /// 内核调度器固定为0
@@ -131,7 +131,7 @@ impl Scheduler {
     fn register_event_source(
         &self,
         event_source: *const (),
-        vtable: EventSorceVtable,
+        vtable: EventSourceVtable,
         index: isize,
     ) -> bool {
         let mut sources = self.sources.write();

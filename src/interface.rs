@@ -38,18 +38,18 @@ trait_interface! {
         /// 目前仅对于由进程创建的内核态任务（如同步/异步trap处理任务）调用，
         /// 因此只有对这些任务调用`pid`才能获得有效的值。
         fn set_pid(&self, pid: usize);
-        /// 保存线程上下文
-        fn save_thread_context(&self);
-        /// 保存trap上下文
-        fn save_trap_context(&self);
+        // /// 保存线程上下文
+        // fn save_thread_context(&self);
+        // /// 保存trap上下文
+        // fn save_trap_context(&self);
         /// 恢复寄存器上下文（可能为线程上下文或trap上下文）
         fn restore_context(&self);
         /// 恢复协程上下文，函数返回时自动保存了协程上下文
-        fn poll(&self) -> Poll<usize>;
+        fn poll(&self) -> Poll<isize>;
         /// 获取线程上下文保存的栈底指针
         fn thread_stack_base(&self) -> usize;
         /// 设置协程运行返回值
-        fn set_return_value(&self, value: usize);
+        fn set_return_value(&self, value: isize);
     }
 }
 
@@ -147,8 +147,37 @@ trait_interface! {
 #[repr(u8)]
 #[derive(PartialEq)]
 pub enum TaskState {
+    /// 就绪状态，可以从就绪队列中取出运行。
+    ///
+    /// ### 时序
+    ///
+    /// （被抢占）保存上下文 -> 设置状态为`Ready` -> 放回就绪队列 -> 从`CURRENT_TASK`上清除
+    ///
+    /// （主动让出）设置状态为`Ready` -> 保存上下文 -> 放回就绪队列 -> 从`CURRENT_TASK`上清除
     Ready = 0,
+    /// 运行状态。
+    ///
+    /// ### 时序
+    ///
+    /// 设置为`CURRENT_TASK` -> 设置状态为`Running` -> 恢复上下文
     Running = 1,
+    /// 阻塞状态。
+    ///
+    /// ### 时序
+    ///
+    /// （在任务内设置Blocked状态）设置状态为`Blocked` -> 保存上下文 -> 从`CURRENT_TASK`上清除
+    ///
+    /// （协程未设置Blocked状态即返回Pending）保存上下文 -> 设置状态为`Blocked` -> 从`CURRENT_TASK`上清除
+    ///
+    /// 注意：本模块未规定设置Blocked状态与加入阻塞队列的时序关系。用户需考虑Blocked状态的更新时机，
+    /// 避免出现任务已设置了`Blocked`状态，还在运行时，就被唤醒并放在另一核心上运行的情况。
     Blocked = 2,
+    /// 退出状态。
+    ///
+    /// ### 时序
+    ///
+    /// （在任务内设置Exited状态）设置状态为`Exited` -> 保存上下文 -> 从`CURRENT_TASK`上清除
+    ///
+    /// （协程返回Ready）保存上下文（虽然此时的协程的上下文应该为空） -> 设置状态为`Exited` -> 从`CURRENT_TASK`上清除
     Exited = 3,
 }

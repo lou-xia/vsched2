@@ -439,7 +439,7 @@ pub(crate) unsafe extern "C" fn run_coroutine() -> usize {
         }
     }
     let in_kernel = {
-        get_current_task().save_thread_context();
+        // get_current_task().save_thread_context();
         get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].load(core::sync::atomic::Ordering::Acquire)
     };
     if in_kernel {

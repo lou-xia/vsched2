@@ -62,7 +62,7 @@ trait_interface! {
         /// 分配栈
         fn alloc() -> *mut ();
         /// 回收栈
-        /// 
+        ///
         /// 调度器模块保证不会回收初始栈。
         fn dealloc(stack: *mut ());
     }
@@ -85,13 +85,6 @@ trait_interface! {
         ///
         /// 在内核态调度到用户线程后使用
         fn into_user_context(task: *const ());
-        /// 在内核态切换地址空间
-        ///
-        /// 以进程号（全局进程表中的索引）表示地址空间。
-        ///
-        /// 若位于内核，则进程号为当前地址空间所属进程的进程号。
-        /// （这一点与调度器中不同，因为同一个调度器可以包含属于多个地址空间的内核态任务。）
-        fn switch_vspace(vspace_pid: *const ());
     }
 }
 

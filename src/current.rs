@@ -92,6 +92,13 @@ pub(crate) unsafe fn get_user_data<T>(data: &T, vspace: Option<*mut ()>) -> &T {
     let kernel_addr = data as *const T as usize;
     let len = core::mem::size_of::<T>();
 
+    let vspace = vspace.or_else(|| {
+        Some(
+            get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].load(Ordering::Acquire)
+                as *mut (),
+        )
+    });
+    assert!(vspace.is_some());
     let user_ptr = UserDataVirtImpl::get_user_data(kernel_addr, len, vspace);
     assert!(
         !user_ptr.is_null(),

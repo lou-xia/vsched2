@@ -184,3 +184,9 @@ pub extern "C" fn push_task_into_process(task: *const (), pid: usize) -> bool {
         }
     }
 }
+
+/// 当前地址空间
+#[unsafe(no_mangle)]
+pub extern "C" fn current_vspace() -> usize {
+    get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].load(Ordering::Acquire)
+}

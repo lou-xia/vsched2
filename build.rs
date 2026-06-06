@@ -8,6 +8,8 @@ fn main() {
         const EVENT_SORCE_NUM: usize = 8;
         /// 就绪队列大小
         const READY_QUEUE_SIZE: usize = 256;
+        /// trap等待队列大小
+        const TRAP_WAIT_QUEUE_SIZE: usize = 256;
         /// 任务最低优先级
         const LOWEST_PRIORITY: isize = 15;
         /// 任务最高优先级

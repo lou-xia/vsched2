@@ -19,24 +19,15 @@ trait_interface! {
         ///
         /// 根据最新保存的上下文类型不同，线程和协程可以互相转化
         fn is_coroutine(&self) -> bool;
+        /// 判断任务是否为内核态任务
+        fn is_kernel(&self) -> bool;
         /// 获取任务所处的进程id，也就是任务所处地址空间的所属进程的id，
         /// 因此某些内核态任务也可能属于某个进程。
-        ///
-        /// 如果之前未对该任务调用过`set_pid`，则返回0。否则，返回上一次`set_pid`传入的值。
-        ///
-        /// 目前，因为该字段仅用于获取内核任务所处的地址空间，
-        /// 且因为任务的创建由os负责，无法在每个任务创建时均设置其pid，
-        /// 所以仅对于由进程创建的内核态任务（如同步/异步trap处理任务），
-        /// 我们会使用`set_pid`设置其pid，
-        /// 也只有对这些任务调用`pid`才能获得有效的值。
         ///
         /// 此处的进程id即为全局进程表`PROCESS_INFO_TABLE`的索引
         fn pid(&self) -> usize;
         /// 设置任务的pid，也就是任务所处地址空间的所属进程的id，
         /// 此处的进程id即为全局进程表`PROCESS_INFO_TABLE`的索引。
-        ///
-        /// 目前仅对于由进程创建的内核态任务（如同步/异步trap处理任务）调用，
-        /// 因此只有对这些任务调用`pid`才能获得有效的值。
         fn set_pid(&self, pid: usize);
         // /// 保存线程上下文
         // fn save_thread_context(&self);
@@ -89,14 +80,29 @@ trait_interface! {
 }
 
 trait_interface! {
-    /// 同步trap处理
-    pub trait TrapHandle {
-        /// 通过一个阻塞队列获取阻塞于其上的trap处理任务，如果没有足够的任务则创建一个。
+    /// 同步trap处理接口，同时规定了trap信息数据结构的接口。
+    ///
+    /// TrapInfo的生命周期在模块内部管理，为了避免直接使用时大小不确定而使用引用形式。
+    ///
+    /// 外部需在`from_task`中创建`TrapInfo`的`Box`等堆分配实例，并将其转换为引用并返回；
+    /// 在`dealloc`中将引用转换回`Box`等堆分配实例并进行释放。
+    pub trait TrapInfo {
+        /// 从被trap的任务中获取trap信息
         ///
-        /// 参数中的指针指向外部定义的Task类型，代表被trap的任务。获取的trap处理任务需要接收这个任务，解析trap原因并处理。
+        /// 传入的任务一定是被trap的任务，因此具有trap上下文类型的寄存器上下文。
+        fn from_task(task: *const ()) -> &'static Self;
+        /// 处理trap。参数为被trap的任务。
+        /// 当被trap的任务与trap处理无关时（例如外部中断），参数为None。
+        fn handle(&self, task: Option<*const ()>);
+        /// 释放trap信息。
         ///
-        /// trap处理任务的执行流程应如图所示：[trap处理任务执行流程.png](https://github.com/rosy233333/weekly-progress/blob/dev/26.3.23~26.3.29/trap%E5%A4%84%E7%90%86%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.png)
-        fn get_handler(task: *const ()) -> *const ();
+        /// 在调度模块中，每个由`from_task`创建的`TrapInfo`实例都必须调用一次`dealloc`进行释放。
+        fn dealloc(&self);
+        /// 创建一个新的trap处理任务，并返回TCB地址
+        /// （指向impl Task的指针）
+        ///
+        /// trap处理任务使用`trap_handler`作为执行的函数，且将该函数的参数传入`trap_handler`中。
+        fn new_handler(queue: *const ()) -> *const ();
     }
 }
 

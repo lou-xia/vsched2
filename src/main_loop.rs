@@ -9,13 +9,14 @@ use core::{sync::atomic::Ordering, task::Poll};
 use crate::{
     current::{get_current_task, get_user_data, set_current_task, STACK_HANDLER, USER_SCHEDULER},
     interface::{
-        Context, ContextVirtImpl, SMPVirtImpl, Task, TaskState, TaskVirtImpl, TrapHandle,
-        TrapHandleVirtImpl, VSpace, VSpaceVirtImpl, SMP,
+        Context, ContextVirtImpl, SMPVirtImpl, Task, TaskState, TaskVirtImpl, TrapInfoVirtImpl,
+        VSpace, VSpaceVirtImpl, SMP,
     },
     jump_to_trampoline,
     schedule::scheduler::Scheduler,
     set_pre_stack,
     stack::{coroutine_trampoline, thread_trampoline},
+    TrapInfo,
 };
 use vdso_helper::get_vvar_data;
 
@@ -47,25 +48,54 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
             if privilege == 0 {
                 let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base;
                 set_pre_stack!(new_stack_base);
+
+                let current_task = get_current_task();
+                current_task.set_state(TaskState::Blocked);
+                let scheduler =
+                    unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
+                // trap处理需要传入任务
+                scheduler
+                    .push_trap(
+                        TrapInfoVirtImpl::from_task(current_task.to_ptr()),
+                        Some(current_task),
+                        SMPVirtImpl::cpu_id(),
+                    )
+                    .unwrap();
+
+                1
             } else if privilege == 1 {
                 // let new_stack_base = STACK_HANDLER.lock().alloc_stack().base;
                 // set_user_pre_stack!(new_stack_base);
-                unimplemented!("user mode not supported yet")
+                unimplemented!("user mode not supported yet");
+                2
             } else {
                 unreachable!("unknown privilege level: {privilege}")
             }
-            0
         }
         // 外部中断，将当前任务重新放回就绪态后进入对应调度器。
         1 => {
-            get_current_task().set_state(TaskState::Ready);
             if privilege == 0 {
                 let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base;
                 set_pre_stack!(new_stack_base);
+
+                let current_task = get_current_task();
+                current_task.set_state(TaskState::Ready);
+                let scheduler =
+                    unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
+                // 外部中断处理不需要传入任务
+                scheduler
+                    .push_trap(
+                        TrapInfoVirtImpl::from_task(current_task.to_ptr()),
+                        None,
+                        SMPVirtImpl::cpu_id(),
+                    )
+                    .unwrap();
                 1
             } else if privilege == 1 {
                 // let new_stack_base = STACK_HANDLER.lock().alloc_stack().base;
                 // sset_user_pre_stack!(new_stack_base);
+                let current_task = get_current_task();
+                current_task.set_state(TaskState::Ready);
                 2
             } else {
                 unreachable!("unknown privilege level: {privilege}")
@@ -99,19 +129,19 @@ pub extern "C" fn thread_entry() -> usize {
     }
 }
 
-/// 同步trap处理函数
-///
-/// 获取trap处理任务并传入当前上下文，设置trap处理任务为当前上下文，进入`run_task`
-#[no_mangle]
-pub extern "C" fn trap_handle() {
-    let current_task = get_current_task();
-    let handler_ptr = TrapHandleVirtImpl::get_handler(current_task.to_ptr());
-    assert!(!handler_ptr.is_null(), "Trap Handler should not be null");
-    let handler_task = unsafe { TaskVirtImpl::from_ptr(handler_ptr) };
-    handler_task.set_pid(current_task.pid());
-    // handler_task.set_state(TaskState::Running);
-    set_current_task(handler_task);
-}
+// /// 同步trap处理函数
+// ///
+// /// 获取trap处理任务并传入当前上下文，设置trap处理任务为当前上下文，进入`run_task`
+// #[no_mangle]
+// pub extern "C" fn trap_handle() {
+//     let current_task = get_current_task();
+//     let handler_ptr = TrapInfoVirtImpl::get_handler(current_task.to_ptr());
+//     assert!(!handler_ptr.is_null(), "Trap Handler should not be null");
+//     let handler_task = unsafe { TaskVirtImpl::from_ptr(handler_ptr) };
+//     handler_task.set_pid(current_task.pid());
+//     // handler_task.set_state(TaskState::Running);
+//     set_current_task(handler_task);
+// }
 
 /// 内核的调度与地址空间、特权级切换函数
 ///

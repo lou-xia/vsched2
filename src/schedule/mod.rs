@@ -4,3 +4,4 @@ pub mod event_source;
 pub(crate) mod process_info;
 pub(crate) mod ready_queue;
 pub(crate) mod scheduler;
+pub mod trap_wait_queue;

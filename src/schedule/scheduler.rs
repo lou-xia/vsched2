@@ -1,6 +1,6 @@
 //! 调度器
 
-use core::marker::PhantomPinned;
+use core::{marker::PhantomPinned, pin::Pin};
 
 use heapless::Vec;
 use lazyinit::LazyInit;
@@ -10,7 +10,11 @@ use spin::rwlock::RwLock;
 use super::event_source::{EventSource, EventSourceVtable};
 use crate::{
     interface::{SMPVirtImpl, TaskVirtImpl, EVENT_SORCE_NUM, SMP},
-    schedule::ready_queue::ReadyQueue,
+    schedule::{
+        ready_queue::ReadyQueue,
+        trap_wait_queue::{self, TrapWaitQueue},
+    },
+    TrapInfoVirtImpl,
 };
 
 /// 调度器数据结构
@@ -36,8 +40,14 @@ pub(crate) struct Scheduler {
     ///
     /// 由于其同时放在了事件源数组中，因此在Scheduler结构中产生了自引用，需要声明为`!Unpin`。
     ///
-    /// 放入任务时，使用就绪队列的接口；取出任务时，使用事件源的接口。
+    /// 放入任务时使用自身接口，取出任务时使用事件源接口。
     ready_queue: ReadyQueue,
+    /// trap等待队列。
+    ///
+    /// 也会作为事件源放入事件源数组中并产生自引用。
+    ///
+    /// 放入任务时使用自身接口，取出任务时使用事件源接口。
+    trap_wait_queue: TrapWaitQueue,
     // #[pin]
     _pin: PhantomPinned,
 }
@@ -72,20 +82,33 @@ impl Scheduler {
     //     })
     // }
     /// 初始化调度器实例
-    pub(crate) fn init(self_ref: &LazyInit<Self>, global_index: usize) {
+    pub(crate) fn init(self_ref: Pin<&LazyInit<Self>>, global_index: usize) {
         let ready_queue = ReadyQueue::new();
+        let trap_wait_queue = TrapWaitQueue::new();
         self_ref.init_once(Self {
             sources: RwLock::new(Vec::new()),
             global_index,
             ready_queue,
+            trap_wait_queue,
             _pin: PhantomPinned,
         });
+        // pin 投影，Pin<&LazyInit<Self>> -> Pin<&TrapWaitQueue>
+        let twq_ref = unsafe { self_ref.map_unchecked(|s| &s.trap_wait_queue) };
+        twq_ref.init();
         self_ref
             .sources
             .write()
             .push((
                 &self_ref.ready_queue as *const ReadyQueue as *const (),
                 ReadyQueue::vtable(),
+            ))
+            .unwrap();
+        self_ref
+            .sources
+            .write()
+            .push((
+                &self_ref.trap_wait_queue as *const TrapWaitQueue as *const (),
+                TrapWaitQueue::vtable(),
             ))
             .unwrap();
     }
@@ -97,12 +120,14 @@ impl Scheduler {
     ///
     /// 内核可能访问进程调度器的`ready_queue`字段，因此需要在内核态即初始化调度器。
     /// 而内核不会访问`sources`字段，因此其可以在用户态初始化。
-    pub(crate) fn init_except_sources(self_ref: &LazyInit<Self>, global_index: usize) {
+    pub(crate) fn init_except_sources(self_ref: Pin<&LazyInit<Self>>, global_index: usize) {
         let ready_queue = ReadyQueue::new();
+        let trap_wait_queue = TrapWaitQueue::new();
         self_ref.init_once(Self {
             sources: RwLock::new(Vec::new()),
             global_index,
             ready_queue,
+            trap_wait_queue,
             _pin: PhantomPinned,
         });
     }
@@ -110,13 +135,24 @@ impl Scheduler {
     /// 初始化调度器实例的`sources`字段。
     ///
     /// 新建进程时，在内核态调用了`init_except_sources`之后，再在用户态调用`init_sources`以完成调度器实例的初始化。
-    pub(crate) fn init_sources(self_ref: &LazyInit<Self>) {
+    pub(crate) fn init_sources(self_ref: Pin<&LazyInit<Self>>) {
+        // pin 投影，Pin<&LazyInit<Self>> -> Pin<&TrapWaitQueue>
+        let twq_ref = unsafe { self_ref.map_unchecked(|s| &s.trap_wait_queue) };
+        twq_ref.init();
         self_ref
             .sources
             .write()
             .push((
                 &self_ref.ready_queue as *const ReadyQueue as *const (),
                 ReadyQueue::vtable(),
+            ))
+            .unwrap();
+        self_ref
+            .sources
+            .write()
+            .push((
+                &self_ref.trap_wait_queue as *const TrapWaitQueue as *const (),
+                TrapWaitQueue::vtable(),
             ))
             .unwrap();
     }
@@ -227,5 +263,15 @@ impl Scheduler {
         task: &'static TaskVirtImpl,
     ) -> Result<(), &'static TaskVirtImpl> {
         self.ready_queue.push_task(task)
+    }
+
+    /// 将一个trap信息和一个可选的被trap的任务放入队列
+    pub(crate) fn push_trap(
+        &self,
+        trap_info: &'static TrapInfoVirtImpl,
+        task: Option<&'static TaskVirtImpl>,
+        cpuid: usize,
+    ) -> Result<(), (&'static TrapInfoVirtImpl, Option<&'static TaskVirtImpl>)> {
+        self.trap_wait_queue.push_trap(trap_info, task, cpuid)
     }
 }

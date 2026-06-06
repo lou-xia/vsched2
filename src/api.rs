@@ -1,4 +1,4 @@
-use core::sync::atomic::Ordering;
+use core::{pin::Pin, sync::atomic::Ordering};
 
 use spin::mutex::SpinMutex;
 use vdso_helper::get_vvar_data;
@@ -23,7 +23,7 @@ use crate::{
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_init_main(init_stack_base: *const (), init_task_ptr: *const ()) {
     // 调度器初始化，虽然名称是USER_SCHEDULER，但它是内核调度器的实例，且在内核空间中存储和使用。
-    Scheduler::init(&USER_SCHEDULER, 0);
+    Scheduler::init(unsafe { Pin::new_unchecked(&USER_SCHEDULER) }, 0);
     get_vvar_data!(KERNEL_SCHEDULER).store(
         USER_SCHEDULER.get().unwrap() as *const Scheduler as *mut Scheduler,
         Ordering::Release,
@@ -104,7 +104,7 @@ pub extern "C" fn process_init(vspace_ptr: *mut *mut ()) -> usize {
     // 需要在此处初始化的原因是需要初始化进程调度器，之后才能将该进程的任务放入调度器中。
     let vspace = unsafe { *vspace_ptr };
     let user_scheduler = unsafe { get_user_data(&USER_SCHEDULER, Some(vspace)) };
-    Scheduler::init_except_sources(user_scheduler, pid);
+    Scheduler::init_except_sources(unsafe { Pin::new_unchecked(user_scheduler) }, pid);
     get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
         .scheduler
         .store(
@@ -140,7 +140,7 @@ extern "C" {
 #[unsafe(no_mangle)]
 pub extern "C" fn user_init() {
     // 初始化内核态未初始化的，调度器的`sources`字段。
-    Scheduler::init_sources(&USER_SCHEDULER);
+    Scheduler::init_sources(unsafe { Pin::new_unchecked(&USER_SCHEDULER) });
 
     // 用户态不需要初始化CURRENT_TASK、IN_KERNEL、STACK_HANDLER和CURRENT_VSPACE，因为它们在内核态切换到用户态任务时会被正确设置。
     // （TODO: 真的吗？）
@@ -190,3 +190,13 @@ pub extern "C" fn push_task_into_process(task: *const (), pid: usize) -> bool {
 pub extern "C" fn current_vspace() -> usize {
     get_vvar_data!(CURRENT_VSPACE)[SMPVirtImpl::cpu_id()].load(Ordering::Acquire)
 }
+
+/// 获取阻塞于trap上的任务
+#[unsafe(no_mangle)]
+pub extern "C" fn get_trap_blocked_task() -> Option<*const ()> {
+    todo!()
+}
+
+/// trap处理任务中运行的函数
+#[unsafe(no_mangle)]
+pub extern "C" fn trap_handler() {}

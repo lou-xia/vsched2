@@ -399,14 +399,14 @@ global_asm!(
         # 不可达
         .long 0xdeadbeef
 
-    raw_trap_handle:
-        # `trap_handle`为`schedule_loop.rs`中的rust函数。
-        push_0_arg
-        call trap_handle
-        pop_0_arg
-        jmp raw_run_task
-        # 不可达
-        .long 0xdeadbeef
+    # raw_trap_handle:
+    #     # `trap_handle`为`schedule_loop.rs`中的rust函数。
+    #     push_0_arg
+    #     call trap_handle
+    #     pop_0_arg
+    #     jmp raw_run_task
+    #     # 不可达
+    #     .long 0xdeadbeef
 
     # `raw_kschdule`为内核初始化时进入调度器的入口。
     # 进入时，需设置reg0=0, reg1=0，

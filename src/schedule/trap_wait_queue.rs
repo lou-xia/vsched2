@@ -20,8 +20,9 @@ use spin::mutex::Mutex;
 use vdso_helper::get_vvar_data;
 
 use crate::{
-    schedule::event_source::EventSource, SMPVirtImpl, Task, TaskState, TaskVirtImpl, TrapInfo,
-    TrapInfoVirtImpl, CPU_NUM, HIGHEST_PRIORITY, LOWEST_PRIORITY, SMP, TRAP_WAIT_QUEUE_SIZE,
+    current::get_current_task, schedule::event_source::EventSource, SMPVirtImpl, Task, TaskState,
+    TaskVirtImpl, TrapInfo, TrapInfoVirtImpl, CPU_NUM, HIGHEST_PRIORITY, LOWEST_PRIORITY, SMP,
+    TRAP_WAIT_QUEUE_SIZE,
 };
 
 const INACTIVE_PRIORITY: isize = LOWEST_PRIORITY + 1;
@@ -81,7 +82,10 @@ impl TrapWaitQueue {
 ///
 /// OS需在`TrapInfo::new_handler`的实现中，用这个函数创建trap处理任务。
 /// 该函数的参数即为`new_handler`接口中传入的参数，即指向trap等待队列中某个核心的队列的指针。
-pub async fn trap_handler(queue: *const ()) {
+///
+/// 该函数只能通过api调用，不能直接调用。
+#[inline]
+pub(crate) fn trap_handler(queue: *const ()) {
     let queue = unsafe {
         &*(queue
             as *const Mutex<
@@ -119,7 +123,9 @@ pub async fn trap_handler(queue: *const ()) {
         } else {
             // 没有trap，等待
             // 不需要存储Waker，因为总是可以从`TrapWaitQueue`中获取该任务。
-            poll_fn(|_| Poll::<()>::Pending).await;
+            let task = get_current_task();
+            task.set_state(TaskState::Blocked);
+            task.resched();
         }
     }
 }

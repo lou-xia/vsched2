@@ -29,10 +29,13 @@ trait_interface! {
         /// 设置任务的pid，也就是任务所处地址空间的所属进程的id，
         /// 此处的进程id即为全局进程表`PROCESS_INFO_TABLE`的索引。
         fn set_pid(&self, pid: usize);
-        // /// 保存线程上下文
-        // fn save_thread_context(&self);
-        // /// 保存trap上下文
-        // fn save_trap_context(&self);
+        /// 保存线程上下文，然后进入`api::raw_thread_entry`。
+        /// 下次从上下文中恢复后，从该函数中返回。
+        ///
+        /// 不需修改任务状态。
+        ///
+        /// 调用此函数时，`self`一定是当前任务。
+        fn resched(&self);
         /// 恢复寄存器上下文（可能为线程上下文或trap上下文）
         fn restore_context(&self);
         /// 恢复协程上下文，函数返回时自动保存了协程上下文

@@ -197,6 +197,11 @@ pub extern "C" fn get_trap_blocked_task() -> Option<*const ()> {
     todo!()
 }
 
-/// trap处理任务中运行的函数
+/// 在trap处理任务中运行的函数。
+///
+/// OS需在`TrapInfo::new_handler`的实现中，用这个函数创建trap处理任务。
+/// 该函数的参数即为`new_handler`接口中传入的参数，即指向trap等待队列中某个核心的队列的指针。
 #[unsafe(no_mangle)]
-pub extern "C" fn trap_handler() {}
+pub extern "C" fn trap_handler(queue: *const ()) {
+    crate::schedule::trap_wait_queue::trap_handler(queue);
+}

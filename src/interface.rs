@@ -40,16 +40,15 @@ trait_interface! {
         fn restore_context(&self);
         /// 恢复协程上下文，函数返回时自动保存了协程上下文
         fn poll(&self) -> Poll<isize>;
-        /// 获取线程上下文保存的栈底指针
-        fn thread_stack_base(&self) -> usize;
+        /// 获取线程上下文保存的`Stack`指针
+        fn thread_stack(&self) -> *mut ();
         /// 设置协程运行返回值
         fn set_return_value(&self, value: isize);
     }
 }
 
 trait_interface! {
-    /// 栈的分配和回收。
-    /// 以栈底指针为标识，分配时返回栈底指针，回收时传入栈底指针
+    /// 栈的描述
     ///
     /// 只会在栈所在的地址空间中调用。
     pub trait Stack {
@@ -57,8 +56,10 @@ trait_interface! {
         fn alloc() -> *mut ();
         /// 回收栈
         ///
-        /// 调度器模块保证不会回收初始栈。
-        fn dealloc(stack: *mut ());
+        /// 调用该函数后，不应再使用该栈数据结构
+        fn dealloc(&mut self);
+        /// 栈底指针
+        fn base(&self) -> *mut ();
     }
 }
 

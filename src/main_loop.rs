@@ -16,7 +16,7 @@ use crate::{
     schedule::scheduler::Scheduler,
     set_pre_stack,
     stack::{coroutine_trampoline, thread_trampoline},
-    TrapInfo,
+    Stack, StackVirtImpl, TrapInfo,
 };
 use vdso_helper::get_vvar_data;
 
@@ -46,7 +46,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
         // 普通同步 trap，进入 trap 处理流程。
         0 => {
             if privilege == 0 {
-                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base;
+                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base();
                 set_pre_stack!(new_stack_base);
 
                 let current_task = get_current_task();
@@ -75,7 +75,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
         // 外部中断，将当前任务重新放回就绪态后进入对应调度器。
         1 => {
             if privilege == 0 {
-                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base;
+                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base();
                 set_pre_stack!(new_stack_base);
 
                 let current_task = get_current_task();
@@ -385,19 +385,21 @@ pub extern "C" fn run_task(privilege: usize, stack_status: usize) -> usize {
         // }
         jump_to_trampoline!(coroutine_trampoline, new_sp);
     } else {
-        let thread_stack = { get_current_task().thread_stack_base() };
+        let thread_stack = get_current_task().thread_stack();
         {
             let mut stack_handler = if privilege != 0 {
                 STACK_HANDLER.lock()
             } else {
                 get_vvar_data!(KERNEL_STACKS).lock()
             };
-            stack_handler.get_thread_stack(Some(thread_stack.into()), stack_status);
+            let thread_stack = unsafe { StackVirtImpl::from_mut(thread_stack) };
+            stack_handler.get_thread_stack(Some(thread_stack), stack_status);
         };
         // unsafe {
         //     core::arch::asm!("call thread_trampoline", in("a0") thread_stack, in("a1") ret_addr, options(noreturn));
         // }
-        jump_to_trampoline!(thread_trampoline, thread_stack);
+        let thread_stack_base = unsafe { StackVirtImpl::from_mut(thread_stack) }.base();
+        jump_to_trampoline!(thread_trampoline, thread_stack_base);
     }
     unreachable!();
 }

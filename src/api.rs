@@ -6,8 +6,8 @@ use vdso_helper::get_vvar_data;
 use crate::{
     current::{get_user_data, STACK_HANDLER, USER_SCHEDULER},
     schedule::scheduler::Scheduler,
-    stack::{StackHandler, StackWapper},
-    SMPVirtImpl, TaskVirtImpl, SMP,
+    stack::StackHandler,
+    SMPVirtImpl, StackVirtImpl, TaskVirtImpl, SMP,
 };
 
 /// 在内核的主核心调用的调度器初始化接口。
@@ -18,10 +18,10 @@ use crate::{
 ///
 /// 参数：
 ///
-/// - `init_stack_base`：内核初始化使用的栈（也就是当前栈）的基址，该栈需要可以通过Stack::dealloc回收。
+/// - `init_stack`：内核初始化使用的栈（也就是当前栈）的`Stack`数据结构指针。
 /// - `init_task_ptr`：内核初始化执行流（当前执行流）所属的任务指针。需要内核先创建该任务，再将其指针传入该函数中。
 #[unsafe(no_mangle)]
-pub extern "C" fn kernel_init_main(init_stack_base: *const (), init_task_ptr: *const ()) {
+pub extern "C" fn kernel_init_main(init_stack: *mut (), init_task_ptr: *const ()) {
     // 调度器初始化，虽然名称是USER_SCHEDULER，但它是内核调度器的实例，且在内核空间中存储和使用。
     Scheduler::init(unsafe { Pin::new_unchecked(&USER_SCHEDULER) }, 0);
     get_vvar_data!(KERNEL_SCHEDULER).store(
@@ -43,7 +43,7 @@ pub extern "C" fn kernel_init_main(init_stack_base: *const (), init_task_ptr: *c
 
     // 内核态不需要初始化STACK_HANDLER，但需初始化KERNEL_STACKS中的current_stack
     get_vvar_data!(KERNEL_STACKS).lock().current_stack[SMPVirtImpl::cpu_id()] =
-        Some(StackWapper::from_raw_init(init_stack_base as usize));
+        Some(unsafe { StackVirtImpl::from_mut(init_stack) });
 }
 
 /// 在内核的副核心调用的调度器初始化接口。
@@ -54,10 +54,10 @@ pub extern "C" fn kernel_init_main(init_stack_base: *const (), init_task_ptr: *c
 ///
 /// 参数：
 ///
-/// - `init_stack_base`：内核初始化使用的栈（也就是当前栈）的基址，该栈需要可以通过Stack::dealloc回收。
+/// - `init_stack_base`：内核初始化使用的栈（也就是当前栈）的`Stack`数据结构指针。
 /// - `init_task_ptr`：内核初始化执行流（当前执行流）所属的任务指针。需要内核先创建该任务，再将其指针传入该函数中。
 #[unsafe(no_mangle)]
-pub extern "C" fn kernel_init_secondary(init_stack_base: *const (), init_task_ptr: *const ()) {
+pub extern "C" fn kernel_init_secondary(init_stack: *mut (), init_task_ptr: *const ()) {
     // 不需初始化调度器，因为其已由`kernel_init_main`在主核心中初始化，并通过vDSO在所有核心中共享。
 
     // 初始化CURRENT_TASK
@@ -74,7 +74,7 @@ pub extern "C" fn kernel_init_secondary(init_stack_base: *const (), init_task_pt
 
     // 内核态不需要初始化STACK_HANDLER，但需初始化KERNEL_STACKS中的current_stack
     get_vvar_data!(KERNEL_STACKS).lock().current_stack[SMPVirtImpl::cpu_id()] =
-        Some(StackWapper::from_raw_init(init_stack_base as usize));
+        Some(unsafe { StackVirtImpl::from_mut(init_stack) });
 }
 
 /// 在内核态调用的进程初始化接口，每个用户进程初始化一次。

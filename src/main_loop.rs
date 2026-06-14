@@ -30,7 +30,7 @@ use vdso_helper::get_vvar_data;
 ///     - 0: 不是外部中断
 ///     - 1: 外部中断
 ///     - 2: 特殊参数的系统调用，仅用于“从用户态调度器进入内核”的情况。
-/// - privilege: 特权级
+/// - privilege: （trap后的）当前特权级
 ///     - 0: 内核态
 ///     - 1: 用户态
 ///
@@ -42,6 +42,11 @@ use vdso_helper::get_vvar_data;
 /// - 3: `utok_schedule`
 #[no_mangle]
 pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
+    match privilege {
+        0 => get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].store(true, Ordering::Release),
+        1 => get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].store(false, Ordering::Release),
+        privilege => unreachable!("unknown privilege level: {privilege}"),
+    }
     match trap_type {
         // 普通同步 trap，进入 trap 处理流程。
         0 => {
@@ -117,9 +122,15 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
 
 /// 从线程进入调度器的入口，也就是触发线程重新调度的函数
 ///
-/// 目前该函数只有判断当前特权级并返回的功能。
+/// 先修改当前任务状态，再判断当前特权级并返回。
 #[no_mangle]
 pub extern "C" fn thread_entry() -> usize {
+    let current_task = get_current_task();
+    if current_task.state() == TaskState::Blocking {
+        current_task.set_state(TaskState::Blocked);
+    } else if current_task.state() == TaskState::Running {
+        current_task.set_state(TaskState::Ready);
+    }
     let in_kernel = get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()]
         .load(core::sync::atomic::Ordering::Acquire);
     if in_kernel {
@@ -240,6 +251,8 @@ fn push_prev_task(current_scheduler: &Scheduler) {
                 panic!("Failed to push task back to scheduler: {:?}", task.to_ptr());
             }
         };
+    } else if current_task.state() == TaskState::Exited {
+        current_task.dealloc();
     }
 }
 
@@ -455,20 +468,19 @@ pub extern "C" fn krun_utask(stack_status: usize) {
 ///     - 1: 用户态
 #[no_mangle]
 pub(crate) unsafe extern "C" fn run_coroutine() -> usize {
-    get_current_task().set_state(TaskState::Running);
-    let res = get_current_task().poll();
+    let current_task = get_current_task();
+    current_task.set_state(TaskState::Running);
+    let res = current_task.poll();
     // ************** 协程主动让权的入口 **************
-    match res {
-        Poll::Ready(val) => {
-            get_current_task().set_return_value(val);
-            get_current_task().set_state(TaskState::Exited);
-        }
-        Poll::Pending => {
-            // 协程主动让权时，可能设置了任务状态也可能不设置。在不设置任务状态的情况，在此处设置为`Blocked`状态。
-            if get_current_task().state() == TaskState::Running {
-                get_current_task().set_state(TaskState::Blocked);
-            }
-        }
+    if current_task.state() == TaskState::Blocking || current_task.state() == TaskState::Running {
+        // 协程主动让权时，可能设置了任务状态也可能不设置。
+        // 若设置了`Blocking`状态，则在此处改为`Blocked`状态。
+        // 在不设置任务状态的情况，在此处设置为`Blocked`状态。
+        current_task.set_state(TaskState::Blocked);
+    }
+    if let Poll::Ready(val) = res {
+        current_task.set_return_value(val);
+        current_task.set_state(TaskState::Exited);
     }
     let in_kernel = {
         // get_current_task().save_thread_context();

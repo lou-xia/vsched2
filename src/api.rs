@@ -4,10 +4,10 @@ use spin::mutex::SpinMutex;
 use vdso_helper::get_vvar_data;
 
 use crate::{
-    current::{get_user_data, STACK_HANDLER, USER_SCHEDULER},
+    current::{get_current_task, get_user_data, STACK_HANDLER, USER_SCHEDULER},
     schedule::scheduler::Scheduler,
     stack::StackHandler,
-    SMPVirtImpl, StackVirtImpl, TaskVirtImpl, SMP,
+    SMPVirtImpl, StackVirtImpl, Task, TaskVirtImpl, SMP,
 };
 
 /// 在内核的主核心调用的调度器初始化接口。
@@ -212,4 +212,23 @@ pub extern "C" fn current_task_ptr() -> *const () {
 #[unsafe(no_mangle)]
 pub extern "C" fn set_current_task_ptr(task: *const ()) -> *const () {
     get_vvar_data!(CURRENT_TASK)[SMPVirtImpl::cpu_id()].swap(task as *mut (), Ordering::AcqRel)
+}
+
+/// 在保存线程上下文时，通过此函数获取当前栈。该核心的current_stack变为None。
+///
+/// （临时设计）获取当前栈之后，在调度器中实际使用的栈仍是被获取的栈。因为这个栈不会在调度器中再次操作，因此可以设置为None。
+///
+/// TODO: 修改如上设计和栈的相关设计，避免调度器和线程同时使用一个栈的同步问题。
+#[unsafe(no_mangle)]
+pub extern "C" fn take_current_stack() -> *mut () {
+    let cpu_id = SMPVirtImpl::cpu_id();
+    // 此处使用任务特权级而非当前特权级，这样才能获取与任务对应的栈。
+    if get_current_task().is_kernel() {
+        get_vvar_data!(KERNEL_STACKS)
+            .lock()
+            .take_current_stack(cpu_id)
+            .to_mut()
+    } else {
+        STACK_HANDLER.lock().take_current_stack(cpu_id).to_mut()
+    }
 }

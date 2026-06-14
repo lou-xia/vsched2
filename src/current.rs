@@ -32,6 +32,23 @@ vvar_data! {
     /// 指针指向存放在内核空间的调度器实例，用于防止在用户态访问内核态调度器。
     KERNEL_SCHEDULER: LazyInit<AtomicPtr<Scheduler>>,
     /// 当前位于用户态或内核态，实现为perCPU的共享数据。
+    ///
+    /// ## 设置`IN_KERNEL`的时机
+    ///
+    /// - 调度器入口
+    ///     - `trap_entry`：根据当前所处特权级设置。
+    ///     - `thread_entry`：线程让出时的特权级一定等于线程的特权级，在调度器出口时已经设置了，因此无需设置。
+    ///     - `run_task`（协程让出）：无需设置，理由同线程让出。
+    /// - 调度器出口
+    ///     - `run_task`：任务的特权级一定等于当前特权级，因此无需设置。
+    ///     - `krun_utask`：设置为`false`。
+    ///
+    /// ## 两种特权级
+    ///
+    /// - 若需获取当前所处的特权级，使用`IN_KERNEL`，也可以使用`schedule_loop`中设置的特定寄存器。
+    /// - 若需获取`current_task`的特权级，使用`get_current_task().is_kernel()`。
+    ///
+    /// 两者不一定相同，例如从用户态任务trap到内核的情况，`IN_KERNEL = true`，`get_current_task().is_kernel() = false`。
     IN_KERNEL: [AtomicBool; CPU_NUM],
     /// 以进程号表示的当前地址空间，实现为perCPU的共享数据。
     ///
@@ -56,7 +73,7 @@ vvar_data! {
     PROCESS_INFO_TABLE: ProcessInfoTable,
     /// 内核栈池，实现为非perCPU的共享数据。
     ///
-    /// 每个CPU分配一个内核栈池，管理内核态使用的栈
+    /// 所有CPU共享一个内核栈池，每个CPU使用单独的current_stack变量。
     KERNEL_STACKS: SpinMutex<StackHandler>,
 }
 

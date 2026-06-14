@@ -20,6 +20,13 @@ trait_interface! {
         /// 根据最新保存的上下文类型不同，线程和协程可以互相转化
         fn is_coroutine(&self) -> bool;
         /// 判断任务是否为内核态任务
+        ///
+        /// ## 两种特权级
+        ///
+        /// - 若需获取当前所处的特权级，使用`IN_KERNEL`，也可以使用`schedule_loop`中设置的特定寄存器。
+        /// - 若需获取`current_task`的特权级，使用`get_current_task().is_kernel()`。
+        ///
+        /// 两者不一定相同，例如从用户态任务trap到内核的情况，`IN_KERNEL = true`，`get_current_task().is_kernel() = false`。
         fn is_kernel(&self) -> bool;
         /// 获取任务所处的进程id，也就是任务所处地址空间的所属进程的id，
         /// 因此某些内核态任务也可能属于某个进程。
@@ -44,6 +51,8 @@ trait_interface! {
         fn thread_stack(&self) -> *mut ();
         /// 设置协程运行返回值
         fn set_return_value(&self, value: isize);
+        /// 释放一个已经退出的任务
+        fn dealloc(&self);
     }
 }
 
@@ -170,12 +179,9 @@ pub enum TaskState {
     ///
     /// ### 时序
     ///
-    /// （在任务内设置Blocked状态）设置状态为`Blocked` -> 保存上下文 -> 从`CURRENT_TASK`上清除
+    /// （在任务内设置Blocking状态）设置状态为`Blocking` -> 保存上下文 -> 设置状态为`Blocked` -> 从`CURRENT_TASK`上清除
     ///
     /// （协程未设置Blocked状态即返回Pending）保存上下文 -> 设置状态为`Blocked` -> 从`CURRENT_TASK`上清除
-    ///
-    /// 注意：本模块未规定设置Blocked状态与加入阻塞队列的时序关系。用户需考虑Blocked状态的更新时机，
-    /// 避免出现任务已设置了`Blocked`状态，还在运行时，就被唤醒并放在另一核心上运行的情况。
     Blocked = 2,
     /// 退出状态。
     ///
@@ -185,4 +191,14 @@ pub enum TaskState {
     ///
     /// （协程返回Ready）保存上下文（虽然此时的协程的上下文应该为空） -> 设置状态为`Exited` -> 从`CURRENT_TASK`上清除
     Exited = 3,
+    /// 任务已加入阻塞队列，但还未保存上下文的状态。
+    ///
+    /// 增加此状态是为了避免在任务中设置了阻塞状态后，还未保存上下文就被取出执行的同步问题。
+    ///
+    /// 该状态只会由OS设置，在调度器中检测到`Blocking`状态后即会改为`Blocked`。
+    ///
+    /// ### 时序
+    ///
+    /// （在任务内设置Blocking状态）设置状态为`Blocking` -> 保存上下文 -> 设置状态为`Blocked` -> 从`CURRENT_TASK`上清除
+    Blocking = 4,
 }

@@ -147,10 +147,14 @@ impl StackHandler {
         &mut self,
         stack: &'static mut StackVirtImpl,
         cpu_id: usize,
-    ) -> &'static mut StackVirtImpl {
+    ) -> Option<&'static mut StackVirtImpl> {
+        self.current_stack[cpu_id].replace(stack)
+    }
+
+    pub(crate) fn take_current_stack(&mut self, cpu_id: usize) -> &'static mut StackVirtImpl {
         self.current_stack[cpu_id]
-            .replace(stack)
-            .expect("Error: Failed to set current stack")
+            .take()
+            .expect("Error: Failed to take current stack")
     }
 
     /// self切换到空栈，返回空栈的栈底。
@@ -159,12 +163,13 @@ impl StackHandler {
     ///
     /// 参数：
     /// - `stack_status`: 代表当前栈的状态，0为空栈，1为非空栈。
-    pub(crate) fn get_empty_stack(&mut self, stack_type: usize) -> usize {
+    pub(crate) fn get_empty_stack(&mut self, _stack_type: usize) -> usize {
         let cpu_id = SMPVirtImpl::cpu_id();
-        if stack_type != 0 {
+        if self.current_stack[cpu_id].is_none() {
+            // 非空栈，需要切到空栈
             let empty_stack = self.alloc_stack();
             let old_stack = self.set_current_stack(empty_stack, cpu_id);
-            self.dealloc_stack(old_stack);
+            assert!(old_stack.is_none());
         }
         self.current_stack[cpu_id].as_ref().unwrap().base() as usize
     }
@@ -179,16 +184,16 @@ impl StackHandler {
     pub(crate) fn get_thread_stack(
         &mut self,
         thread_stack: Option<&'static mut StackVirtImpl>,
-        stack_type: usize,
+        _stack_type: usize,
     ) {
         let old_stack = {
             if let Some(stack) = thread_stack {
                 self.set_current_stack(stack, SMPVirtImpl::cpu_id())
             } else {
-                self.current_stack[SMPVirtImpl::cpu_id()].take().unwrap()
+                self.current_stack[SMPVirtImpl::cpu_id()].take()
             }
         };
-        if stack_type == 0 {
+        if let Some(old_stack) = old_stack {
             self.dealloc_stack(old_stack);
         }
     }

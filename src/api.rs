@@ -1,7 +1,7 @@
 use core::{pin::Pin, sync::atomic::Ordering};
 
 use spin::mutex::SpinMutex;
-use vdso_helper::get_vvar_data;
+use vdso_helper::{get_vvar_data, log::info};
 
 use crate::{
     current::{get_current_task, get_user_data, STACK_HANDLER, USER_SCHEDULER},
@@ -45,6 +45,8 @@ pub extern "C" fn kernel_init_main(init_stack: *mut (), init_task_ptr: *const ()
     // 内核态不需要初始化STACK_HANDLER，但需初始化KERNEL_STACKS中的current_stack
     get_vvar_data!(KERNEL_STACKS).lock().current_stack[cpu_id] =
         Some(unsafe { StackVirtImpl::from_mut(init_stack) });
+
+    info!("kernel_init_main complete!");
 }
 
 /// 在内核的副核心调用的调度器初始化接口。
@@ -76,6 +78,8 @@ pub extern "C" fn kernel_init_secondary(init_stack: *mut (), init_task_ptr: *con
     // 内核态不需要初始化STACK_HANDLER，但需初始化KERNEL_STACKS中的current_stack
     get_vvar_data!(KERNEL_STACKS).lock().current_stack[SMPVirtImpl::cpu_id()] =
         Some(unsafe { StackVirtImpl::from_mut(init_stack) });
+
+    info!("kernel_init_secondary complete!");
 }
 
 /// 在内核态调用的进程初始化接口，每个用户进程初始化一次。

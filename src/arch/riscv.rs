@@ -143,7 +143,7 @@ macro_rules! switch_sp_tratrampoline {
 macro_rules! jump_to_trampoline {
     ($trampoline_fn:ident, $new_sp:ident) => {
         unsafe {
-            // a0: 新的sp；ra: 返回地址（已加密保存在栈中）
+            // a0: 新的sp；ra: 返回地址（已保存在栈中）
             #[cfg(target_arch = "riscv32")]
             core::arch::asm!(
                 r#"

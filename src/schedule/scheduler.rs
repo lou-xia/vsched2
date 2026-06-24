@@ -99,16 +99,16 @@ impl Scheduler {
             .sources
             .write()
             .push((
-                &self_ref.ready_queue as *const ReadyQueue as *const (),
-                ReadyQueue::vtable(),
+                &self_ref.trap_wait_queue as *const TrapWaitQueue as *const (),
+                TrapWaitQueue::vtable(),
             ))
             .unwrap();
         self_ref
             .sources
             .write()
             .push((
-                &self_ref.trap_wait_queue as *const TrapWaitQueue as *const (),
-                TrapWaitQueue::vtable(),
+                &self_ref.ready_queue as *const ReadyQueue as *const (),
+                ReadyQueue::vtable(),
             ))
             .unwrap();
     }
@@ -143,16 +143,16 @@ impl Scheduler {
             .sources
             .write()
             .push((
-                &self_ref.ready_queue as *const ReadyQueue as *const (),
-                ReadyQueue::vtable(),
+                &self_ref.trap_wait_queue as *const TrapWaitQueue as *const (),
+                TrapWaitQueue::vtable(),
             ))
             .unwrap();
         self_ref
             .sources
             .write()
             .push((
-                &self_ref.trap_wait_queue as *const TrapWaitQueue as *const (),
-                TrapWaitQueue::vtable(),
+                &self_ref.ready_queue as *const ReadyQueue as *const (),
+                ReadyQueue::vtable(),
             ))
             .unwrap();
     }

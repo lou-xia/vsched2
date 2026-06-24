@@ -226,11 +226,12 @@ global_asm!(
     # - a1: 代表（trap后的）当前特权级，1为用户态，0为内核态。
     raw_trap_entry:
         mv s1, a1
-        li s2, 0
+        mv s2, a2
         # `trap_entry`为`schedule_loop.rs`中的rust函数。
         # 参数：
         # - a0: trap类型，与os传入的参数格式相同。
         # - a1: 代表当前特权级，1为用户态，0为内核态。
+        # - a2: 旧的 sscratch 值（预保存栈基址），供栈回收使用。
         # 返回值：
         # - a0: 下一步的跳转目标
         #   - 0: trap_handle

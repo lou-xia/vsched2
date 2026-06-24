@@ -106,8 +106,13 @@ pub(crate) fn trap_handler(queue: *const ()) {
             // TODO: 根据task切换地址空间？还是把切换地址空间放在handle接口的逻辑里？
             trap_info.handle(task.map(|t| t.to_ptr()));
             if let Some(task) = &task {
-                // 唤醒被trap的任务
-                task.set_state(TaskState::Ready);
+                // 任务不能是Exited状态
+                if task.state() != TaskState::Exited {
+                    task.set_state(TaskState::Ready);
+                } else {
+                    #[cfg(feature = "log")]
+                    log::warn!("trap_handler: task is Exited, skipping push");
+                }
                 let scheduler = if task.is_kernel() {
                     get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire)
                 } else {
@@ -119,6 +124,13 @@ pub(crate) fn trap_handler(queue: *const ()) {
                 };
                 unsafe {
                     (*scheduler).push_task(task).unwrap();
+                }
+                // TODO: 这里真的需要更新一下吗？
+                if !task.is_kernel() {
+                    let new_prio = unsafe { (*scheduler).hightest_priority() };
+                    get_vvar_data!(PROCESS_INFO_TABLE).table[task.pid()]
+                        .highest_prio
+                        .store(new_prio, Ordering::Release);
                 }
             }
         } else {

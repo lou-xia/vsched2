@@ -341,7 +341,11 @@ fn ktask_schedule(next_pid: usize) -> usize {
         // 切换地址空间和调度器后获取下一任务并运行
         switch_vspace(next_pid);
 
-        let uscheduler = unsafe { get_user_data(&USER_SCHEDULER, None) };
+        let vspace_ptr = get_vvar_data!(PROCESS_INFO_TABLE).table[next_pid]
+            .vspace
+            .load(Ordering::Acquire);
+        let vspace = if !vspace_ptr.is_null() { unsafe { *vspace_ptr } } else { core::ptr::null_mut() };
+        let uscheduler = unsafe { get_user_data(&USER_SCHEDULER, Some(vspace)) };
         if let (Some(next_task), new_prio) = uscheduler.pop_task() {
             get_vvar_data!(PROCESS_INFO_TABLE).table[next_pid]
                 .highest_prio

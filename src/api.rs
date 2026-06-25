@@ -103,7 +103,7 @@ pub extern "C" fn process_init(vspace_ptr: *mut *mut ()) -> usize {
         .store(vspace_ptr, Ordering::Release);
     get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
         .highest_prio
-        .store(isize::MAX, Ordering::Release);
+        .store(0, Ordering::Release);
 
     // 初始化用户态vDSO私有数据。
     // 需要在此处初始化的原因是需要初始化进程调度器，之后才能将该进程的任务放入调度器中。
@@ -149,6 +149,14 @@ pub extern "C" fn user_init() {
 
     // 用户态不需要初始化CURRENT_TASK、IN_KERNEL、STACK_HANDLER和CURRENT_VSPACE，因为它们在内核态切换到用户态任务时会被正确设置。
     // （TODO: 真的吗？）
+}
+
+/// 在指定进程的用户态 vDSO 中初始化调度器的 sources 字段。
+/// 通过 vspace（指向 AddrSpace 的指针）找到目标进程的 USER_SCHEDULER。
+#[unsafe(no_mangle)]
+pub extern "C" fn user_init_with_vspace(vspace: *mut ()) {
+    let scheduler = unsafe { Pin::new_unchecked(get_user_data(&USER_SCHEDULER, Some(vspace))) };
+    Scheduler::init_sources(scheduler);
 }
 
 /// 将任务放入当前进程、当前特权级的就绪队列。

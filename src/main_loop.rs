@@ -7,7 +7,10 @@
 use core::{sync::atomic::Ordering, task::Poll};
 
 use crate::{
-    current::{get_current_task, get_user_data, set_current_task, STACK_HANDLER, USER_SCHEDULER},
+    current::{
+        self, get_current_task, get_user_data, set_current_task, STACK_HANDLER, USER_SCHEDULER,
+    },
+    get_sp,
     interface::{
         Context, ContextVirtImpl, SMPVirtImpl, Task, TaskState, TaskVirtImpl, TrapInfoVirtImpl,
         VSpace, VSpaceVirtImpl, SMP,
@@ -18,7 +21,7 @@ use crate::{
     stack::{coroutine_trampoline, thread_trampoline},
     Stack, StackVirtImpl, TrapInfo,
 };
-use vdso_helper::get_vvar_data;
+use vdso_helper::{get_vvar_data, log::info};
 
 /// 同步trap入口
 ///
@@ -41,7 +44,7 @@ use vdso_helper::get_vvar_data;
 /// - 2: `uschedule`
 /// - 3: `utok_schedule`
 #[no_mangle]
-pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
+pub extern "C" fn trap_entry(trap_type: usize, privilege: usize, old_sscratch: usize) -> usize {
     match privilege {
         0 => get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].store(true, Ordering::Release),
         1 => get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()].store(false, Ordering::Release),
@@ -51,9 +54,21 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
         // 普通同步 trap，进入 trap 处理流程。
         0 => {
             if privilege == 0 {
-                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base();
-                set_pre_stack!(new_stack_base);
-
+                let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
+                info!("[trap_entry:sync] old_sscratch={:#x}", old_sscratch);
+                let new_stack = stacks.alloc_stack();
+                set_pre_stack!(new_stack.base());
+                // Recycle the old pre-save stack: set it as current_stack so
+                // run_task / krun_utask will reuse or dealloc it.
+                if old_sscratch != 0 {
+                    let old_vsi = StackVirtImpl::from_base(old_sscratch as *mut ());
+                    if !old_vsi.is_null() {
+                        let _old = stacks
+                            .set_current_stack(unsafe { &mut *old_vsi }, SMPVirtImpl::cpu_id());
+                        // info!("[trap_entry:sync] set_current_stack ok");
+                    }
+                }
+                drop(stacks);
                 let current_task = get_current_task();
                 current_task.set_state(TaskState::Blocked);
                 let scheduler =
@@ -80,8 +95,19 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
         // 外部中断，将当前任务重新放回就绪态后进入对应调度器。
         1 => {
             if privilege == 0 {
-                let new_stack_base = get_vvar_data!(KERNEL_STACKS).lock().alloc_stack().base();
-                set_pre_stack!(new_stack_base);
+                let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
+                info!("[trap_entry:irq] old_sscratch={:#x}", old_sscratch);
+                let new_stack = stacks.alloc_stack();
+                set_pre_stack!(new_stack.base());
+                if old_sscratch != 0 {
+                    let old_vsi = StackVirtImpl::from_base(old_sscratch as *mut ());
+                    if !old_vsi.is_null() {
+                        let _old = stacks
+                            .set_current_stack(unsafe { &mut *old_vsi }, SMPVirtImpl::cpu_id());
+                        // info!("[trap_entry:irq] set_current_stack ok");
+                    }
+                }
+                drop(stacks);
 
                 let current_task = get_current_task();
                 current_task.set_state(TaskState::Ready);
@@ -167,7 +193,7 @@ pub extern "C" fn kschedule() -> usize {
     let scheduler = unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
     let current_pid = scheduler.global_index();
     assert!(current_pid == 0);
-    push_prev_task(scheduler);
+    push_prev_task();
     loop {
         let next_pid = process_schedule(scheduler);
         let res = ktask_schedule(next_pid);
@@ -187,7 +213,7 @@ pub extern "C" fn kschedule() -> usize {
 #[no_mangle]
 pub extern "C" fn uschedule(stack_status: usize) {
     let scheduler = USER_SCHEDULER.get().unwrap();
-    push_prev_task(scheduler);
+    push_prev_task();
     loop {
         let next_pid = process_schedule(scheduler);
 
@@ -241,11 +267,27 @@ fn switch_vspace(vspace_pid: usize) {
 }
 
 /// 将上一任务放回调度器
-fn push_prev_task(current_scheduler: &Scheduler) {
+fn push_prev_task() {
     let current_task = get_current_task();
     let state = current_task.state();
     if state == TaskState::Ready {
-        match current_scheduler.push_task(current_task) {
+        // Push to the task's own scheduler, not blindly to current_scheduler.
+        // Kernel tasks (pid=0) go to KERNEL_SCHEDULER; user tasks go to their
+        // process scheduler so they resume via krun_utask (not run_task).
+        let target = if current_task.is_kernel() {
+            unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) }
+        } else {
+            let pid = current_task.pid();
+            let scheduler_ptr = get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
+                .scheduler
+                .load(Ordering::Acquire);
+            if scheduler_ptr.is_null() {
+                unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) }
+            } else {
+                unsafe { &*scheduler_ptr }
+            }
+        };
+        match target.push_task(current_task) {
             Ok(()) => (),
             Err(task) => {
                 panic!("Failed to push task back to scheduler: {:?}", task.to_ptr());

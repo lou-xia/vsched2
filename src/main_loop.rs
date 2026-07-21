@@ -89,6 +89,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 // 一方面，如果任务在set_state和push_prev_task之前已经被唤醒了，就可能导致set_state和push_prev_task获取的上下文不正确。
                 // 另一方面，set_state和push_prev_task不会导致任务可能被运行，从而push_trap使用的上下文正确。
                 let prev_state = current_task.set_state(TaskState::Blocked);
+                assert!(prev_state == TaskState::Running);
                 push_prev_task(TaskState::Blocked);
                 // warn!(
                 //     "trap entry: current task {:#x}, state {:?} -> Blocked",
@@ -159,6 +160,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                     )
                     .unwrap();
                 let prev_state = current_task.set_state(TaskState::Ready);
+                assert!(prev_state == TaskState::Running);
                 // warn!(
                 //     "trap entry: current task {:#x}, state {:?} -> Ready",
                 //     current_task as *const _ as usize, prev_state
@@ -171,6 +173,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 // sset_user_pre_stack!(new_stack_base);
                 let current_task = get_current_task();
                 let prev_state = current_task.set_state(TaskState::Ready);
+                assert!(prev_state == TaskState::Running);
                 // warn!(
                 //     "trap entry: current task {:#x}, state {:?} -> Ready",
                 //     current_task as *const _ as usize, prev_state
@@ -638,7 +641,8 @@ pub extern "C" fn krun_utask(stack_status: usize) {
 #[no_mangle]
 pub(crate) unsafe extern "C" fn run_coroutine() -> usize {
     let current_task = get_current_task();
-    current_task.set_state(TaskState::Running);
+    let prev_state = current_task.set_state(TaskState::Running);
+    assert!(prev_state == TaskState::Ready || prev_state == TaskState::Blocked);
     assert_disable_irq("before run coroutine");
     let res = current_task.poll();
     // ************** 协程主动让权的入口 **************
@@ -738,7 +742,8 @@ pub(crate) unsafe extern "C" fn run_coroutine() -> usize {
 /// 运行线程
 #[no_mangle]
 pub(crate) unsafe extern "C" fn run_thread() -> ! {
-    get_current_task().set_state(TaskState::Running);
+    let prev_state = get_current_task().set_state(TaskState::Running);
+    assert!(prev_state == TaskState::Ready || prev_state == TaskState::Blocked);
     assert_disable_irq("before run thread");
     get_current_task().restore_context();
     unreachable!();

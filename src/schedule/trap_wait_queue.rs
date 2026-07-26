@@ -17,12 +17,14 @@ use vdso_helper::{get_vvar_data, log::warn};
 use crate::main_loop::switch_vspace;
 
 #[cfg(not(feature = "vdso_only"))]
-fn switch_vspace(vspace_pid: usize) {/*先空着吧*/}
+fn switch_vspace(vspace_pid: usize) { /*先空着吧*/
+}
 
 use crate::{
-    current::get_current_task, schedule::event_source::EventSource, SMPVirtImpl, Task, TaskState,
-    TaskVirtImpl, TrapInfo, TrapInfoVirtImpl, CPU_NUM, HIGHEST_PRIORITY, LOWEST_PRIORITY, SMP,
-    TRAP_WAIT_QUEUE_SIZE,
+    current::{get_current_task, USER_SCHEDULER},
+    schedule::{event_source::EventSource, scheduler::Scheduler},
+    SMPVirtImpl, Task, TaskState, TaskVirtImpl, TrapInfo, TrapInfoVirtImpl, CPU_NUM,
+    HIGHEST_PRIORITY, LOWEST_PRIORITY, SMP, TRAP_WAIT_QUEUE_SIZE,
 };
 
 const INACTIVE_PRIORITY: isize = LOWEST_PRIORITY + 1;
@@ -47,9 +49,9 @@ pub(crate) struct TrapWaitQueue {
     queues: [Mutex<TrapQueue>; CPU_NUM], // 这里和之前是一样的，我看着太长了，用 type 在上面重新定义了一下
     /// 所有CPU共享的空闲trap处理任务队列。
     idle_handlers: Mutex<IdleHandlerQueue>,
-    /// 每个核心上的trap处理任务
-    /// 只记录按CPU数量预创建的初始handler；handler本身不绑定CPU。
-    handlers: [LazyInit<&'static TaskVirtImpl>; CPU_NUM],
+    // /// 每个核心上的trap处理任务
+    // /// 只记录按CPU数量预创建的初始handler；handler本身不绑定CPU。
+    // handlers: [LazyInit<&'static TaskVirtImpl>; CPU_NUM],
     /// 因为handlers中的trap处理任务的Future持有queues中队列的引用，因此需要固定该结构。
     /// 当前Future实际持有整个TrapWaitQueue的指针，以便在换了CPU后处理当前CPU的队列。
     _pin: PhantomPinned,
@@ -62,18 +64,24 @@ impl TrapWaitQueue {
             // trap_count: AtomicUsize::new(0),
             queues: [const { Mutex::new(Deque::new()) }; CPU_NUM],
             idle_handlers: Mutex::new(Deque::new()),
-            handlers: [const { LazyInit::new() }; CPU_NUM],
+            // handlers: [const { LazyInit::new() }; CPU_NUM],
             _pin: PhantomPinned,
         }
     }
 
     /// 初始化trap处理任务
-    pub(crate) fn init(self: Pin<&Self>) {
+    pub(crate) fn init(self: Pin<&Self>, scheduler: &Scheduler) {
         let queue = self.as_ref().get_ref() as *const Self as *const ();
         for cpuid in 0..CPU_NUM {
-            let handler = unsafe { TaskVirtImpl::from_ptr(TrapInfoVirtImpl::new_handler(queue)) };
-            self.handlers[cpuid].init_once(handler);
-            let handler = *self.handlers[cpuid].get().unwrap();
+            // 该函数不一定在初始化的调度器对应的地址空间中调用，因此需要传入调度器的指针，而不是直接使用USER_SCHEDULER获取调度器。
+            let handler = unsafe {
+                TaskVirtImpl::from_ptr(TrapInfoVirtImpl::new_handler(
+                    scheduler as *const Scheduler as *const (),
+                ))
+            };
+            // self.handlers[cpuid].init_once(handler);
+            // let handler = *self.handlers[cpuid].get().unwrap();
+            handler.set_state(TaskState::Blocked); // 因为idle_handlers队列中取出的任务只能为Blocking或Blocked，因此此处需要修改状态
             self.idle_handlers
                 .lock()
                 .push_back(handler)
@@ -146,24 +154,30 @@ fn create_new_handler(handler: &'static TaskVirtImpl) -> &'static TaskVirtImpl {
 /// 在trap处理任务中运行的函数。
 ///
 /// OS需在`TrapInfo::new_handler`的实现中，用这个函数创建trap处理任务。
-/// 该函数的参数即为`new_handler`接口中传入的参数，即指向trap等待队列中某个核心的队列的指针。
-/// 参数改为指向完整TrapWaitQueue；handler每次按当前CPU选择TrapInfo队列。
 ///
 /// 该函数只能通过api调用，不能直接调用。
 #[inline]
-pub(crate) fn trap_handler(queue: *const ()) {
-    let queue = unsafe { &*(queue as *const TrapWaitQueue) };
+pub(crate) fn trap_handler(scheduler: &Scheduler) {
+    let queue = &scheduler.trap_wait_queue;
     // let cpuid = SMPVirtImpl::cpu_id();
     // let queue = &self.queues[cpuid];
     let handler = get_current_task();
     loop {
         let cpuid = SMPVirtImpl::cpu_id();
-        let res = queue.queues[cpuid].lock().pop_front();
+        let mut queue_lock = queue.queues[cpuid].lock();
+        let res = queue_lock.pop_front();
+        let flag = res.is_some() && queue_lock.is_empty();
+        drop(queue_lock);
+        if flag {
+            // trap_wait_queue的优先级需要从ACTIVE_PRIORITY降为INACTIVE_PRIORITY，以便调度器可以选择其他事件源的任务。
+            scheduler.get_and_update_prio();
+        }
+
         if let Some((trap_info, task)) = res {
             // 处理trap
             // self.trap_count
             //     .fetch_sub(1, core::sync::atomic::Ordering::AcqRel);
-            // TODO: 根据task切换地址空间？还是把切换地址空间放在handle接口的逻辑里？
+            // 根据task切换地址空间？还是把切换地址空间放在handle接口的逻辑里？
             // 我暂时先放在了这里切换地址空间，如果后续验证不行，再改到handle接口里吧。
             let pid = task.map_or(0, Task::pid);
             handler.set_pid(pid);
@@ -180,7 +194,7 @@ pub(crate) fn trap_handler(queue: *const ()) {
                     TaskState::Blocked => false,
                     // 系统调用exit等情况会在处理过程中将任务设置为Exited，不应再次入队。
                     TaskState::Exited => true,
-                    _ => panic!("trap_handler: task state is not Blocked!")
+                    _ => panic!("trap_handler: task state is not Blocked!"),
                 };
                 // 这里多加的这层判断是为了避免在任务已经退出的情况下，仍然将其放入调度器的就绪队列中。
                 // 没有验证过删掉是不是也可以，但是逻辑上看应该是需要的。因为有exit系统调用。
@@ -234,11 +248,6 @@ impl EventSource for TrapWaitQueue {
             // 只要有TrapInfo，就可以取出trap_handler。
             // 因为trap_handler只会在当前核心上运行，所以取出trap_handler时，其一定不在运行，也就是保存好了上下文。
             // 共享handler队列由调用take_task的核心第一次运行取出的handler；
-            //
-            // TODO: 这种情况还未处理：
-            // trap_handler阻塞在某个内核资源上，但任务重调度时，trap_wait_queue仍会取出以最高优先级取出该任务。
-            // 导致trap_handler被一直执行，出现近似忙等待的状况。
-            // 我觉得这个TODO现在解决了，因为有了共享idle_handlers，阻塞在内核资源上的handler不在这个队列中了。
             task.map_or(0, Task::pid)
         };
 
@@ -249,9 +258,11 @@ impl EventSource for TrapWaitQueue {
             }
             // 创建任务可能分配内存，不能持有TrapWaitQueue的自旋锁。
             IdleHandler::Empty => {
+                let scheduler = USER_SCHEDULER.get().unwrap();
+                // 该函数一定在self所属的地址空间中调用，因此可以直接使用USER_SCHEDULER获取调度器。
                 let handler = create_new_handler(unsafe {
                     TaskVirtImpl::from_ptr(TrapInfoVirtImpl::new_handler(
-                        self as *const Self as *const (),
+                        scheduler as *const Scheduler as *const (),
                     ))
                 });
                 warn!(

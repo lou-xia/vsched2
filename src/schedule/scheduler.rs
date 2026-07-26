@@ -51,7 +51,7 @@ pub(crate) struct Scheduler {
     /// 也会作为事件源放入事件源数组中并产生自引用。
     ///
     /// 放入任务时使用自身接口，取出任务时使用事件源接口。
-    trap_wait_queue: TrapWaitQueue,
+    pub(crate) trap_wait_queue: TrapWaitQueue,
     // #[pin]
     _pin: PhantomPinned,
 }
@@ -84,7 +84,7 @@ impl Scheduler {
         let mut sources = self_ref.sources.write();
         // pin 投影，Pin<&LazyInit<Self>> -> Pin<&TrapWaitQueue>
         let twq_ref = unsafe { self_ref.map_unchecked(|s| &s.trap_wait_queue) };
-        twq_ref.init();
+        twq_ref.init(&**self_ref);
         let s = unsafe { self_ref.get_ref() };
         let twq_offset = s.field_offset(&s.trap_wait_queue);
         // info!("trap_wait_queue offset: {:#x}", twq_offset);
@@ -121,7 +121,7 @@ impl Scheduler {
         let mut sources = self_ref.sources.write();
         // pin 投影，Pin<&LazyInit<Self>> -> Pin<&TrapWaitQueue>
         let twq_ref = unsafe { self_ref.map_unchecked(|s| &s.trap_wait_queue) };
-        twq_ref.init();
+        twq_ref.init(&**self_ref);
         let s = unsafe { self_ref.get_ref() };
         sources
             .push((s.field_offset(&s.trap_wait_queue), TrapWaitQueue::vtable()))

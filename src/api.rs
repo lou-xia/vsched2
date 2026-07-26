@@ -210,12 +210,12 @@ extern "C" {
     pub fn raw_kschedule() -> !;
 }
 
-/// 在用户态或内核态调用的调度器初始化接口，每个用户进程初始化一次。
+/// 在内核态调用的，用户态调度器初始化接口，每个用户进程初始化一次。
 ///
 /// 通过 vspace 显式定位目标地址空间中的 vDSO，完成 scheduler sources 初始化。
 /// 兼容单页表和双页表：`get_user_data` 通过 vspace 翻译到目标进程的 vDSO，
 /// 且 scheduler sources 使用字段偏移量存储，无论从内核 KVA 还是用户 UVA 访问均正确。
-/// 
+///
 /// 该函数不会切换任务。初始化完成后若需切换任务，则需再调用`reschedule`函数。
 #[unsafe(no_mangle)]
 pub extern "C" fn user_init(vspace: *mut ()) {
@@ -313,8 +313,8 @@ pub extern "C" fn current_vspace() -> usize {
 ///
 /// 需要在关中断环境下调用。
 #[unsafe(no_mangle)]
-pub extern "C" fn trap_handler(queue: *const ()) {
-    crate::schedule::trap_wait_queue::trap_handler(queue);
+pub extern "C" fn trap_handler(scheduler: *const ()) {
+    crate::schedule::trap_wait_queue::trap_handler(unsafe { &*(scheduler as *const Scheduler) });
 }
 
 /// 获取当前任务指针

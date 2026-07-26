@@ -123,7 +123,7 @@ trait_interface! {
         /// （指向impl Task的指针）
         ///
         /// trap处理任务使用`trap_handler`作为执行的函数，且将该函数的参数传入`trap_handler`中。
-        fn new_handler(queue: *const ()) -> *const ();
+        fn new_handler(scheduler: *const ()) -> *const ();
     }
 }
 

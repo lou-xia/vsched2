@@ -117,4 +117,6 @@ impl EventSource for ReadyQueue {
         }
         (core::ptr::null(), prio)
     }
+
+    const IS_PRIO_PER_CPU: bool = false;
 }

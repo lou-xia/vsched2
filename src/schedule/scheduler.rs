@@ -15,7 +15,7 @@ use crate::{
         ready_queue::ReadyQueue,
         trap_wait_queue::{self, TrapWaitQueue},
     },
-    TrapInfoVirtImpl,
+    TrapInfoVirtImpl, CPU_NUM,
 };
 
 /// 调度器数据结构
@@ -92,7 +92,7 @@ impl Scheduler {
         let rq_offset = s.field_offset(&s.ready_queue);
         // info!("ready_queue offset: {:#x}", rq_offset);
         sources.push((rq_offset, ReadyQueue::vtable())).unwrap();
-        self_ref.get_and_update_prio_with_guard(sources.downgrade());
+        self_ref.get_and_update_all_prio_with_guard(sources.downgrade());
     }
 
     /// 初始化调度器实例的`sources`以外的字段。
@@ -129,7 +129,7 @@ impl Scheduler {
         sources
             .push((s.field_offset(&s.ready_queue), ReadyQueue::vtable()))
             .unwrap();
-        self_ref.get_and_update_prio_with_guard(sources.downgrade());
+        self_ref.get_and_update_all_prio_with_guard(sources.downgrade());
     }
 
     /// 注册事件源
@@ -159,7 +159,7 @@ impl Scheduler {
             .insert(insert_index, (self.field_offset(event_source), vtable))
             .is_ok()
         {
-            self.get_and_update_prio_with_guard(sources.downgrade());
+            self.get_and_update_all_prio_with_guard(sources.downgrade());
             true
         } else {
             false
@@ -172,7 +172,7 @@ impl Scheduler {
         let target_offset = self.field_offset(event_source);
         if let Some(index) = sources.iter().position(|(off, _)| *off == target_offset) {
             sources.remove(index);
-            self.get_and_update_prio_with_guard(sources.downgrade());
+            self.get_and_update_all_prio_with_guard(sources.downgrade());
             true
         } else {
             false
@@ -239,7 +239,7 @@ impl Scheduler {
         if first_index == usize::MAX {
             // info!("before return, no source");
             // self.update_prio(isize::MAX);
-            self.update_prio(isize::MAX);
+            self.update_prio(isize::MAX, cpu_id as isize);
             return (None, isize::MAX);
         }
 
@@ -258,7 +258,12 @@ impl Scheduler {
         } else {
             second_prio
         };
-        self.update_prio(prio);
+
+        if sources[first_index].1.is_prio_per_cpu {
+            self.update_prio(prio, cpu_id as isize);
+        } else {
+            self.update_prio(prio, -1);
+        }
         if task.is_null() {
             // info!("before return, task = None");
             (None, prio)
@@ -280,7 +285,11 @@ impl Scheduler {
     ) -> Result<(), &'static TaskVirtImpl> {
         let res = self.ready_queue.push_task(task);
         if res.is_ok() {
-            self.get_and_update_prio();
+            if ReadyQueue::IS_PRIO_PER_CPU {
+                self.get_and_update_current_prio();
+            } else {
+                self.get_and_update_all_prio();
+            }
         }
         res
     }
@@ -294,36 +303,73 @@ impl Scheduler {
     ) -> Result<(), (&'static TrapInfoVirtImpl, Option<&'static TaskVirtImpl>)> {
         let res = self.trap_wait_queue.push_trap(trap_info, task, cpuid);
         if res.is_ok() {
-            self.get_and_update_prio();
+            if TrapWaitQueue::IS_PRIO_PER_CPU {
+                self.get_and_update_current_prio();
+            } else {
+                self.get_and_update_all_prio();
+            }
         }
         res
     }
 
     /// 更新全局进程表中，本进程的优先级
+    ///
+    /// cpu_id参数为需要更新的CPU的id，若为-1则更新所有CPU的优先级。
     #[inline]
-    pub(crate) fn update_prio(&self, prio: isize) {
-        get_vvar_data!(PROCESS_INFO_TABLE).table[self.global_index]
-            .highest_prio
-            .store(prio, Ordering::Release);
+    pub(crate) fn update_prio(&self, prio: isize, cpu_id: isize) {
+        if cpu_id < 0 {
+            for cpu_id in 0..CPU_NUM {
+                get_vvar_data!(PROCESS_INFO_TABLE).table[self.global_index].highest_prio[cpu_id]
+                    .store(prio, Ordering::Release);
+            }
+        } else {
+            get_vvar_data!(PROCESS_INFO_TABLE).table[self.global_index].highest_prio
+                [cpu_id as usize]
+                .store(prio, Ordering::Release);
+        }
     }
 
+    /// 获取并更新当前cpu的本进程优先级
     #[inline]
-    pub(crate) fn get_and_update_prio(&self) -> isize {
+    pub(crate) fn get_and_update_current_prio(&self) -> isize {
         let prio = self.hightest_priority();
-        self.update_prio(prio);
+        let cpu_id = SMPVirtImpl::cpu_id();
+        self.update_prio(prio, cpu_id as isize);
         prio
     }
 
-    /// 在已持有self.source的Guard的情况下，执行get_and_update_prio。
+    /// 在已持有self.source的Guard的情况下，执行get_and_update_current_prio。
     ///
     /// 不会重复获取guard。
     #[inline]
-    pub(crate) fn get_and_update_prio_with_guard<'a>(
+    pub(crate) fn get_and_update_current_prio_with_guard<'a>(
         &self,
         guard: RwLockReadGuard<'a, Vec<(usize, EventSourceVtable), EVENT_SORCE_NUM>>,
     ) -> isize {
         let prio = self.hightest_priority_with_guard(guard);
-        self.update_prio(prio);
+        let cpu_id = SMPVirtImpl::cpu_id();
+        self.update_prio(prio, cpu_id as isize);
+        prio
+    }
+
+    /// 获取并更新所有cpu的本进程优先级
+    #[inline]
+    pub(crate) fn get_and_update_all_prio(&self) -> isize {
+        let prio = self.hightest_priority();
+        self.update_prio(prio, -1);
+        prio
+    }
+
+    /// 在已持有self.source的Guard的情况下，执行get_and_update_all_prio。
+    ///
+    /// 不会重复获取guard。
+    #[inline]
+    pub(crate) fn get_and_update_all_prio_with_guard<'a>(
+        &self,
+        guard: RwLockReadGuard<'a, Vec<(usize, EventSourceVtable), EVENT_SORCE_NUM>>,
+    ) -> isize {
+        let prio = self.hightest_priority_with_guard(guard);
+        self.update_prio(prio, -1);
         prio
     }
 }

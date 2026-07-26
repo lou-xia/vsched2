@@ -170,7 +170,7 @@ pub(crate) fn trap_handler(scheduler: &Scheduler) {
         drop(queue_lock);
         if flag {
             // trap_wait_queue的优先级需要从ACTIVE_PRIORITY降为INACTIVE_PRIORITY，以便调度器可以选择其他事件源的任务。
-            scheduler.get_and_update_prio();
+            scheduler.get_and_update_current_prio();
         }
 
         if let Some((trap_info, task)) = res {
@@ -280,4 +280,6 @@ impl EventSource for TrapWaitQueue {
         // 共享池中handler可能阻塞在内核资源上，因此保留ACTIVE_PRIORITY，让剩余TrapInfo可以继续取出其它handler处理。
         (handler.to_ptr(), ACTIVE_PRIORITY)
     }
+
+    const IS_PRIO_PER_CPU: bool = true;
 }

@@ -1,6 +1,8 @@
 // 全局进程数组，及每个进程在数组中存储的信息
 
-use crate::{interface::PROCESS_NUM, schedule::scheduler::Scheduler, VSpace, VSpaceVirtImpl};
+use crate::{
+    interface::PROCESS_NUM, schedule::scheduler::Scheduler, VSpace, VSpaceVirtImpl, CPU_NUM,
+};
 use core::sync::atomic::{AtomicBool, AtomicIsize, AtomicPtr, AtomicUsize, Ordering};
 use heapless::Vec;
 
@@ -31,7 +33,7 @@ pub(crate) struct ProcessInfo {
     /// 有效位，用于表示全局进程表中的该索引是否被占用
     pub(crate) valid: AtomicBool,
     /// 进程最高优先级，跨地址空间和特权级共享
-    pub(crate) highest_prio: AtomicIsize,
+    pub(crate) highest_prio: [AtomicIsize; CPU_NUM],
     /// 进程的地址空间
     ///
     /// 指针指向的数据结构由OS定义。可以不直接指向页表根节点，而指向内核的某个数据结构，
@@ -51,7 +53,7 @@ impl Default for ProcessInfoTable {
             table: [const {
                 ProcessInfo {
                     valid: AtomicBool::new(false),
-                    highest_prio: AtomicIsize::new(isize::MAX),
+                    highest_prio: [const { AtomicIsize::new(isize::MAX) }; CPU_NUM],
                     vspace: AtomicPtr::new(core::ptr::null_mut()),
                     scheduler: AtomicPtr::new(core::ptr::null_mut()),
                 }
@@ -99,7 +101,7 @@ impl ProcessInfoTable {
     /// 如果当前进程是最高优先级的进程之一，则返回当前进程。
     ///
     /// 若不是，则暂未规定以什么方式从所有最高优先级的进程中选择一个。
-    pub(crate) fn highest_prio_process(&self, current_process: usize) -> usize {
+    pub(crate) fn highest_prio_process(&self, current_process: usize, cpu_id: usize) -> usize {
         let next_i = self.next_i.load(Ordering::Acquire);
         let start = if next_i >= PROCESS_NUM {
             next_i - PROCESS_NUM
@@ -115,7 +117,7 @@ impl ProcessInfoTable {
             if !self.table[index].valid.load(Ordering::Acquire) {
                 continue;
             }
-            let prio = self.table[index].highest_prio.load(Ordering::Acquire);
+            let prio = self.table[index].highest_prio[cpu_id].load(Ordering::Acquire);
             if !self.table[index].valid.load(Ordering::Acquire) {
                 continue;
             }

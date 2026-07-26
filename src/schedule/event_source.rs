@@ -33,6 +33,10 @@ pub struct EventSourceVtable {
     /// - 就绪任务的指针，指向外部定义，实现`Task` trait的类型，若没有就绪任务则返回空指针；
     /// - 取出就绪任务后事件源中就绪任务的最高优先级，若没有就绪任务则返回比最低优先级更低一级的优先级
     pub take_task: fn(*const (), usize) -> (*const (), isize),
+    /// 该类型的优先级是否是per-cpu的，即每个CPU有独立的优先级。
+    ///
+    /// 若为false，则所有CPU共享一个优先级。
+    pub is_prio_per_cpu: bool,
 }
 
 /// 事件源接口的trait形式，实现这个trait可以自动生成vtable
@@ -58,6 +62,10 @@ pub trait EventSource {
     /// - 就绪任务的指针，指向外部定义，实现`Task` trait的类型，若没有就绪任务则返回空指针；
     /// - 取出就绪任务后事件源中就绪任务的最高优先级，若没有就绪任务则返回比最低优先级更低一级的优先级
     fn take_task(&self, cpu_id: usize) -> (*const (), isize);
+    /// 该类型的优先级是否是per-cpu的，即每个CPU有独立的优先级。
+    ///
+    /// 若为false，则所有CPU共享一个优先级。
+    const IS_PRIO_PER_CPU: bool;
 
     /// 生成vtable
     fn vtable() -> EventSourceVtable
@@ -73,6 +81,7 @@ pub trait EventSource {
                 let es = unsafe { &*(ptr as *const Self) };
                 es.take_task(cpu_id)
             },
+            is_prio_per_cpu: Self::IS_PRIO_PER_CPU,
         };
         // info!(
         //     "vtable: hightest_priority: {:#x}, take_task: {:#x}",

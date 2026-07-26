@@ -430,7 +430,8 @@ fn process_schedule(current_scheduler: &Scheduler) -> usize {
     // get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
     //     .highest_prio
     //     .store(prio, Ordering::Release);
-    get_vvar_data!(PROCESS_INFO_TABLE).highest_prio_process(pid)
+    let cpu_id = SMPVirtImpl::cpu_id();
+    get_vvar_data!(PROCESS_INFO_TABLE).highest_prio_process(pid, cpu_id)
 }
 
 /// 仅内核态调用，决定了运行next_pid进程后的工作：

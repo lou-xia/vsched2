@@ -29,6 +29,8 @@ pub extern "C" fn kernel_init_main(init_stack: *mut (), init_task_ptr: *const ()
 
     // 初始化CURRENT_TASK
     get_vvar_data!(CURRENT_TASK)[cpu_id].store(init_task_ptr as *mut (), Ordering::Release);
+    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id]
+        .store(init_task_ptr as *mut (), Ordering::Release);
     // info!(
     //     "current task inited: {:#x}!",
     //     get_vvar_data!(CURRENT_TASK)[cpu_id].load(Ordering::Acquire) as usize
@@ -82,6 +84,8 @@ pub extern "C" fn kernel_init_secondary(init_stack: *mut (), init_task_ptr: *con
 
     // 初始化CURRENT_TASK
     get_vvar_data!(CURRENT_TASK)[cpu_id].store(init_task_ptr as *mut (), Ordering::Release);
+    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id]
+        .store(init_task_ptr as *mut (), Ordering::Release);
 
     // 初始化IN_KERNEL
     get_vvar_data!(IN_KERNEL)[cpu_id].store(true, Ordering::Release);

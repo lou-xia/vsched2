@@ -170,6 +170,11 @@ impl StackHandler {
         base
     }
 
+    /// 将传入的栈写入`trap_stack`变量中。传入的栈需要已经放入`sscratch`等寄存器中，供中断入口使用。
+    ///
+    /// 该函数返回`trap_stack`中原有的栈，因为在中断入口中调用，因此返回的栈就是`sscratch`的旧值，也就是当前正在使用的栈。
+    ///
+    /// 之后，需要将返回的栈写入`current_stack`中，以维护栈状态。
     pub(crate) fn set_trap_stack(
         &mut self,
         stack: &'static mut StackVirtImpl,

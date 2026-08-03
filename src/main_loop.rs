@@ -130,7 +130,8 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                     // trap入口当前运行在原trap_stack上，因此将已放弃的WFI指令使用的栈设置为
                     // 下一次trap_stack，之前的trap_stack处理trap。
                     // 普通任务中断走下面的路径。
-                    let next_trap_stack = stacks.take_current_stack(cpu_id);
+                    let next_trap_stack =
+                        unsafe { StackVirtImpl::from_mut(current_task.thread_stack()) };
                     set_pre_stack!(next_trap_stack.base());
                     stacks
                         .set_trap_stack(next_trap_stack, cpu_id)

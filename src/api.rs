@@ -8,7 +8,7 @@ use crate::{
     schedule::scheduler::Scheduler,
     set_pre_stack,
     stack::StackHandler,
-    SMPVirtImpl, StackVirtImpl, Task, TaskVirtImpl, SMP,
+    SMPVirtImpl, StackVirtImpl, Task, TaskVirtImpl, TrapInfo, TrapInfoVirtImpl, SMP,
 };
 
 /// 在内核的主核心调用的调度器初始化接口。
@@ -29,8 +29,12 @@ pub extern "C" fn kernel_init_main(init_stack: *mut (), init_task_ptr: *const ()
 
     // 初始化CURRENT_TASK
     get_vvar_data!(CURRENT_TASK)[cpu_id].store(init_task_ptr as *mut (), Ordering::Release);
-    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id]
-        .store(init_task_ptr as *mut (), Ordering::Release);
+    // 等待上下文不使用init_task，而是创建专用任务作为上下文容器，
+    // 避免WFI唤醒流程覆盖init_task的栈和上下文。
+    // new_handler的参数传入空指针：该任务不应被调度运行，
+    // 若意外运行trap_handler会因空指针快速定位问题。
+    let wait_context = TrapInfoVirtImpl::new_handler(core::ptr::null());
+    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id].store(wait_context as *mut (), Ordering::Release);
     // info!(
     //     "current task inited: {:#x}!",
     //     get_vvar_data!(CURRENT_TASK)[cpu_id].load(Ordering::Acquire) as usize
@@ -84,8 +88,12 @@ pub extern "C" fn kernel_init_secondary(init_stack: *mut (), init_task_ptr: *con
 
     // 初始化CURRENT_TASK
     get_vvar_data!(CURRENT_TASK)[cpu_id].store(init_task_ptr as *mut (), Ordering::Release);
-    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id]
-        .store(init_task_ptr as *mut (), Ordering::Release);
+    // 等待上下文不使用init_task，而是创建专用任务作为上下文容器，
+    // 避免WFI唤醒流程覆盖init_task的栈和上下文。
+    // new_handler的参数传入空指针：该任务不应被调度运行，
+    // 若意外运行trap_handler会因空指针快速定位问题。
+    let wait_context = TrapInfoVirtImpl::new_handler(core::ptr::null());
+    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id].store(wait_context as *mut (), Ordering::Release);
 
     // 初始化IN_KERNEL
     get_vvar_data!(IN_KERNEL)[cpu_id].store(true, Ordering::Release);

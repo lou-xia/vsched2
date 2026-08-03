@@ -60,6 +60,9 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
         0 => {
             if privilege == 0 {
                 let cpu_id = SMPVirtImpl::cpu_id();
+                // 检查当前核心是否正在休眠，若是则panic，因为同步trap处理流程（异常、系统调用）不应在休眠状态下运行。
+                let scheduler_waiting = get_vvar_data!(IS_SLEEPING)[cpu_id].load(Ordering::Acquire);
+                assert!(!scheduler_waiting, "trap entry: cpu {cpu_id} is sleeping");
                 let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
                 // info!("[trap_entry:sync] old_sscratch={:#x}", old_sscratch);
                 let new_stack = stacks.alloc_stack();
@@ -121,9 +124,10 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
             if privilege == 0 {
                 let cpu_id = SMPVirtImpl::cpu_id();
                 let current_task = get_current_task();
-                let scheduler_wait_context =
-                    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id].load(Ordering::Acquire);
-                let scheduler_waiting = current_task.to_ptr() == scheduler_wait_context;
+                // 中断上下文是否在调度器中（等待休眠的核心），由IS_SLEEPING指示；
+                // 检查后立即清除，表示本核心已离开休眠状态。
+                let scheduler_waiting =
+                    get_vvar_data!(IS_SLEEPING)[cpu_id].swap(false, Ordering::AcqRel);
                 let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
                 let current_stack = if scheduler_waiting {
                     // 没有普通任务运行时，WFI指令使用的栈上没有需要恢复的任务。

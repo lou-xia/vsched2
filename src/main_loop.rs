@@ -7,7 +7,7 @@
 use core::{sync::atomic::Ordering, task::Poll};
 
 use crate::{
-    arch::assert_disable_irq,
+    arch::{assert_disable_irq, wait_irqs},
     current::{
         self, get_current_task, get_user_data, set_current_task, STACK_HANDLER, USER_SCHEDULER,
     },
@@ -63,7 +63,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
                 // info!("[trap_entry:sync] old_sscratch={:#x}", old_sscratch);
                 let new_stack = stacks.alloc_stack();
-                warn!("alloc trap stack: {:#x}", new_stack.base() as usize);
+                // warn!("alloc trap stack: {:#x}", new_stack.base() as usize);
                 set_pre_stack!(new_stack.base());
                 // Recycle the old pre-save stack: set it as current_stack so
                 // run_task / krun_utask will reuse or dealloc it.
@@ -120,11 +120,28 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
         1 => {
             if privilege == 0 {
                 let cpu_id = SMPVirtImpl::cpu_id();
+                let current_task = get_current_task();
+                let scheduler_wait_context =
+                    get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id].load(Ordering::Acquire);
+                let scheduler_waiting = current_task.to_ptr() == scheduler_wait_context;
                 let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
-                // info!("[trap_entry:irq] old_sscratch={:#x}", old_sscratch);
-                let new_stack = stacks.alloc_stack();
-                // warn!("alloc trap stack: {:#x}", new_stack.base() as usize);
-                set_pre_stack!(new_stack.base());
+                let current_stack = if scheduler_waiting {
+                    // 没有普通任务运行时，WFI指令使用的栈上没有需要恢复的任务。
+                    // trap入口当前运行在原trap_stack上，因此将已放弃的WFI指令使用的栈设置为
+                    // 下一次trap_stack，之前的trap_stack处理trap。
+                    // 普通任务中断走下面的路径。
+                    let next_trap_stack = stacks.take_current_stack(cpu_id);
+                    set_pre_stack!(next_trap_stack.base());
+                    stacks
+                        .set_trap_stack(next_trap_stack, cpu_id)
+                        .expect("scheduler wait context has no trap stack")
+                } else {
+                    // info!("[trap_entry:irq] old_sscratch={:#x}", old_sscratch);
+                    let new_stack = stacks.alloc_stack();
+                    // warn!("alloc trap stack: {:#x}", new_stack.base() as usize);
+                    set_pre_stack!(new_stack.base());
+                    stacks.set_trap_stack(new_stack, cpu_id).unwrap()
+                };
                 // Recycle the old pre-save stack: set it as current_stack so
                 // run_task / krun_utask will reuse or dealloc it.
                 // if old_sscratch != 0 {
@@ -135,7 +152,6 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 //         // info!("[trap_entry:irq] set_current_stack ok");
                 //     }
                 // }
-                let current_stack = stacks.set_trap_stack(new_stack, cpu_id).unwrap();
                 // 关于current_task.set_state、push_prev_task和scheduler.push_trap的先后关系：
                 //
                 // 对于中断，需要先push_trap，再set_state和push_prev_task，。
@@ -146,9 +162,14 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 // 一方面，如果任务在push_trap之前已经再次运行了，就可能导致push_trap获取的上下文不正确。
                 // 另一方面，push_trap不会导致任务可能被运行，从而set_state和push_prev_task使用的上下文正确。
                 let _old = stacks.set_current_stack(current_stack, cpu_id);
+                if scheduler_waiting {
+                    assert!(
+                        _old.is_none(),
+                        "scheduler wait stack was not removed before trap rotation"
+                    );
+                }
                 drop(stacks);
 
-                let current_task = get_current_task();
                 let scheduler =
                     unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
                 // 外部中断处理不需要传入任务
@@ -159,6 +180,11 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                         SMPVirtImpl::cpu_id(),
                     )
                     .unwrap();
+                if scheduler_waiting {
+                    // 等待上下文只为TrapInfo提供稳定快照，不是被中断的普通
+                    // 任务，不能修改为Ready或放入共享就绪队列。
+                    return 1;
+                }
                 let prev_state = current_task.set_state(TaskState::Ready);
                 assert!(prev_state == TaskState::Running);
                 // warn!(
@@ -201,14 +227,14 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
 
 /// 从线程进入调度器的入口，也就是触发线程重新调度的函数。
 ///
-/// 如果CPU数量大于1，则需要在线程进入调度器时切换到空栈，防止调度器复用线程栈的同时，线程在其它核心上运行导致同步问题。
+/// 如果CPU数量大于1，或当前保存的是线程上下文，则进入调度器时需要切换到空栈，防止调度器复用线程栈的同时，线程在本核等待或在其它核心上运行导致同步问题。
 ///
 /// 无论是否切换栈，都会进入thread_entry_phase2中进行后续操作。
 /// 该函数的返回值即为thread_entry_phase2的返回值
 #[no_mangle]
 pub extern "C" fn thread_entry() -> usize {
     assert_disable_irq("thread_entry");
-    if CPU_NUM > 1 {
+    if CPU_NUM > 1 || !get_current_task().is_coroutine() {
         let in_kernel = get_vvar_data!(IN_KERNEL)[SMPVirtImpl::cpu_id()]
             .load(core::sync::atomic::Ordering::Acquire);
         // 切换栈
@@ -314,7 +340,7 @@ pub extern "C" fn kschedule() -> usize {
         if res != 2 {
             break res;
         }
-        // info!("do not get task");
+        wait_for_runnable_task(scheduler);
     }
 }
 
@@ -336,6 +362,9 @@ pub extern "C" fn uschedule(stack_status: usize) {
         if res == 0 {
             break;
         }
+        // 用户态不能直接修改sstatus.SIE。当前地址空间无任务时使用现
+        // 有的into_kernel入口，由内核侧调度循环等待中断。
+        ContextVirtImpl::into_kernel();
     }
 }
 
@@ -358,10 +387,36 @@ pub extern "C" fn utok_schedule() -> usize {
         }
 
         let scheduler = unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
+        wait_for_runnable_task(scheduler);
         // info!("after get scheduler");
         next_pid = process_schedule(scheduler);
         // info!("after process schedule");
     }
+}
+
+/// 切换到稳定的调度器等待上下文，在确认仍无任务后执行WFI。
+///
+/// 多核发布者应在任务入队后发送IPI。这里在发布等待上下文后复查一次
+/// 当前CPU看到的全局最高优先级，使“入队发生在发布上下文之前”的竞争不会造成休眠。
+fn wait_for_runnable_task(current_scheduler: &Scheduler) {
+    assert_disable_irq("wait_for_runnable_task");
+    let cpu_id = SMPVirtImpl::cpu_id();
+    let wait_context = get_vvar_data!(SCHEDULER_WAIT_CONTEXT)[cpu_id].load(Ordering::Acquire);
+    assert!(
+        !wait_context.is_null(),
+        "scheduler wait context is not initialized"
+    );
+    set_current_task(unsafe { TaskVirtImpl::from_ptr(wait_context) });
+    // 为了多核同步，需要清一次缓存
+    core::sync::atomic::fence(Ordering::SeqCst);
+
+    let next_pid = process_schedule(current_scheduler);
+    let next_prio = get_vvar_data!(PROCESS_INFO_TABLE).table[next_pid].highest_prio[cpu_id]
+        .load(Ordering::Acquire);
+    if next_prio <= crate::LOWEST_PRIORITY {
+        return;
+    }
+    wait_irqs();
 }
 
 /// 切换地址空间，只会在内核态调用

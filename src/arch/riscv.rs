@@ -368,3 +368,21 @@ pub(crate) fn assert_disable_irq(info: &str) {
         info
     );
 }
+
+/// 在调度器没有可运行任务时临时打开本地中断并等待。
+///
+/// 调用前后中断均为关闭状态。真实中断会通过OS trap入口非局部地重新进入调度器
+#[inline]
+pub(crate) fn wait_irqs() {
+    // log::warn!("wait_irqs: waiting for interrupts...");
+    assert_disable_irq("before wait_irqs");
+    unsafe {
+        asm!(
+            "csrsi sstatus, 2",
+            "wfi",
+            "csrci sstatus, 2",
+            options(nostack),
+        );
+    }
+    assert_disable_irq("after wait_irqs");
+}

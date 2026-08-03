@@ -397,8 +397,10 @@ pub extern "C" fn utok_schedule() -> usize {
 
 /// 切换到稳定的调度器等待上下文，在确认仍无任务后执行WFI。
 ///
-/// 多核发布者应在任务入队后发送IPI。这里在发布等待上下文后复查一次
-/// 当前CPU看到的全局最高优先级，使“入队发生在发布上下文之前”的竞争不会造成休眠。
+/// 在第二次检查调度器之前设置本CPU的`IS_SLEEPING`，使多核发布者能够
+/// 在任务入队后判断本CPU是否正在（或即将）休眠，从而决定是否发送IPI唤醒；
+/// 若第二次检查发现已有任务，则在返回前清除`IS_SLEEPING`，不会进入休眠。
+/// 这样无论任务入队发生在检查之前还是之后，都不会出现休眠后无法被唤醒的情况。
 fn wait_for_runnable_task(current_scheduler: &Scheduler) {
     assert_disable_irq("wait_for_runnable_task");
     let cpu_id = SMPVirtImpl::cpu_id();
@@ -408,13 +410,18 @@ fn wait_for_runnable_task(current_scheduler: &Scheduler) {
         "scheduler wait context is not initialized"
     );
     set_current_task(unsafe { TaskVirtImpl::from_ptr(wait_context) });
-    // 为了多核同步，需要清一次缓存
+    // 在第二次检查调度器之前发布“即将休眠”的状态。
+    // 设置后保持该值直至发现任务返回或真正进入WFI休眠。
+    get_vvar_data!(IS_SLEEPING)[cpu_id].store(true, Ordering::Release);
+    // 为了多核同步，需要清一次缓存，使IS_SLEEPING的发布在第二次检查之前全局可见
     core::sync::atomic::fence(Ordering::SeqCst);
 
     let next_pid = process_schedule(current_scheduler);
     let next_prio = get_vvar_data!(PROCESS_INFO_TABLE).table[next_pid].highest_prio[cpu_id]
         .load(Ordering::Acquire);
     if next_prio <= crate::LOWEST_PRIORITY {
+        // 第二次检查发现有任务：不需要休眠，清除IS_SLEEPING后返回
+        get_vvar_data!(IS_SLEEPING)[cpu_id].store(false, Ordering::Release);
         return;
     }
     wait_irqs();

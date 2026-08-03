@@ -33,6 +33,14 @@ vvar_data! {
     /// `TrapInfo::from_task`当前必须接收任务指针，因此在不修改接口的
     /// 前提下需要保留这个per-CPU指针。
     SCHEDULER_WAIT_CONTEXT: [AtomicPtr<()>; CPU_NUM],
+    /// 指示每个核心是否将要或正在休眠，实现为perCPU的共享数据。
+    ///
+    /// 在`wait_for_runnable_task`进入休眠前的第二次调度器检查之前设置为`true`；
+    /// 若第二次检查发现有任务而无需休眠，则在返回前清除为`false`。
+    ///
+    /// 唤醒核心的IPI逻辑根据该变量判断哪些核心在睡眠（尚未实现）；
+    /// `trap_entry`也通过检查该变量判断中断上下文是否在调度器中，并在检查后将其清除。
+    IS_SLEEPING: [AtomicBool; CPU_NUM],
     /// 内核调度器的全局实例，实现为非perCPU的共享数据。
     ///
     /// 指针指向存放在内核空间的调度器实例，用于防止在用户态访问内核态调度器。

@@ -233,13 +233,12 @@ global_asm!(
         # - a2: 旧的 sscratch 值（预保存栈基址），供栈回收使用。
         # 返回值：
         # - a0: 下一步的跳转目标
-        #   - 0: trap_handle
         #   - 1: kschedule
         #   - 2: uschedule
         #   - 3: utok_schedule
         call trap_entry
-        li a1, 0
-        beq a0, a1, raw_trap_handle
+        # li a1, 0
+        # beq a0, a1, raw_trap_handle
         li a1, 1
         beq a0, a1, raw_kschedule
         li a1, 2

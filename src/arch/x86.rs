@@ -361,15 +361,14 @@ global_asm!(
         # - \#2: 代表当前特权级，1为用户态，0为内核态。
         # 返回值：
         # - ax: 下一步的跳转目标
-        #   - 0: trap_handle
         #   - 1: kschedule
         #   - 2: uschedule
         #   - 3: utok_schedule
         push_2_arg eax, ebx
         call trap_entry
         pop_2_arg
-        cmp eax, 0
-        je raw_trap_handle
+        # cmp eax, 0
+        # je raw_trap_handle
         cmp eax, 1
         je raw_kschedule
         cmp eax, 2
@@ -525,15 +524,14 @@ global_asm!(
         # - \#2: 代表当前特权级，1为用户态，0为内核态。
         # 返回值：
         # - ax: 下一步的跳转目标
-        #   - 0: trap_handle
         #   - 1: kschedule
         #   - 2: uschedule
         #   - 3: utok_schedule
         push_2_arg rax, rbx
         call trap_entry
         pop_2_arg
-        cmp rax, 0
-        je raw_trap_handle
+        # cmp rax, 0
+        # je raw_trap_handle
         cmp rax, 1
         je raw_kschedule
         cmp rax, 2
@@ -563,14 +561,14 @@ global_asm!(
         # 不可达
         .long 0xdeadbeef
 
-    raw_trap_handle:
-        # `trap_handle`为`schedule_loop.rs`中的rust函数。
-        push_0_arg
-        call trap_handle
-        pop_0_arg
-        jmp raw_run_task
-        # 不可达
-        .long 0xdeadbeef
+    # raw_trap_handle:
+    #     # `trap_handle`为`schedule_loop.rs`中的rust函数。
+    #     push_0_arg
+    #     call trap_handle
+    #     pop_0_arg
+    #     jmp raw_run_task
+    #     # 不可达
+    #     .long 0xdeadbeef
 
     # `raw_kschdule`为内核初始化时进入调度器的入口。
     # 进入时，需设置reg0=0, reg1=0，

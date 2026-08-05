@@ -716,6 +716,7 @@ pub(crate) unsafe extern "C" fn run_coroutine() -> usize {
     let res = current_task.poll();
     // ************** 协程主动让权的入口 **************
     // let state = current_task.state();
+    assert_disable_irq("after run coroutine");
     match res {
         Poll::Ready(val) => {
             current_task.set_return_value(val);

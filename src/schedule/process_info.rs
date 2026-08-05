@@ -125,7 +125,7 @@ impl ProcessInfoTable {
                 highest_prio = prio;
                 processes = Vec::from([index]);
             } else if prio == highest_prio {
-                processes.push(index);
+                processes.push(index).unwrap();
             }
         }
         if processes.contains(&current_process) {

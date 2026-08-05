@@ -134,6 +134,8 @@ trait_interface! {
     pub trait SMP {
         /// 获取当前cpuid
         fn cpu_id() -> usize;
+        /// 发送核间中断，用于唤醒正在睡眠的核心
+        fn send_ipi(target_cpu: usize);
     }
 }
 

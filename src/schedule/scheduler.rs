@@ -289,6 +289,15 @@ impl Scheduler {
                 self.get_and_update_current_prio();
             } else {
                 self.get_and_update_all_prio();
+                let cpu_id = SMPVirtImpl::cpu_id();
+                // 检查是否有CPU正在睡眠，若有则唤醒一个。
+                for i in 1..CPU_NUM {
+                    let target_cpu = (i + cpu_id) % CPU_NUM;
+                    if get_vvar_data!(IS_SLEEPING)[target_cpu].load(Ordering::Acquire) {
+                        SMPVirtImpl::send_ipi(target_cpu);
+                        break;
+                    }
+                }
             }
         }
         res
@@ -307,6 +316,15 @@ impl Scheduler {
                 self.get_and_update_current_prio();
             } else {
                 self.get_and_update_all_prio();
+                let cpu_id = SMPVirtImpl::cpu_id();
+                // 检查是否有CPU正在睡眠，若有则唤醒一个。
+                for i in 1..CPU_NUM {
+                    let target_cpu = (i + cpu_id) % CPU_NUM;
+                    if get_vvar_data!(IS_SLEEPING)[target_cpu].load(Ordering::Acquire) {
+                        SMPVirtImpl::send_ipi(target_cpu);
+                        break;
+                    }
+                }
             }
         }
         res

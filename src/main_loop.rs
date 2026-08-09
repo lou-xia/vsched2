@@ -79,6 +79,10 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 //     }
                 // }
                 let current_stack = stacks.set_trap_stack(new_stack, cpu_id).unwrap();
+                // warn!(
+                //     "trap_entry/exception: scheduler use stack {:#x}",
+                //     current_stack as *mut _ as usize
+                // );
                 let _old = stacks.set_current_stack(current_stack, cpu_id);
                 drop(stacks);
                 let current_task = get_current_task();
@@ -137,15 +141,25 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                     let next_trap_stack =
                         unsafe { StackVirtImpl::from_mut(current_task.thread_stack()) };
                     set_pre_stack!(next_trap_stack.base());
-                    stacks
+                    let current_stack = stacks
                         .set_trap_stack(next_trap_stack, cpu_id)
-                        .expect("scheduler wait context has no trap stack")
+                        .expect("scheduler wait context has no trap stack");
+                    // warn!(
+                    //     "trap_entry/interrupt/from_scheduler: scheduler use stack {:#x}",
+                    //     current_stack as *mut _ as usize
+                    // );
+                    current_stack
                 } else {
                     // info!("[trap_entry:irq] old_sscratch={:#x}", old_sscratch);
                     let new_stack = stacks.alloc_stack();
                     // warn!("alloc trap stack: {:#x}", new_stack.base() as usize);
                     set_pre_stack!(new_stack.base());
-                    stacks.set_trap_stack(new_stack, cpu_id).unwrap()
+                    let current_stack = stacks.set_trap_stack(new_stack, cpu_id).unwrap();
+                    // warn!(
+                    //     "trap_entry/interrupt/from_task: scheduler use stack {:#x}",
+                    //     current_stack as *mut _ as usize
+                    // );
+                    current_stack
                 };
                 // Recycle the old pre-save stack: set it as current_stack so
                 // run_task / krun_utask will reuse or dealloc it.
@@ -249,6 +263,7 @@ pub extern "C" fn thread_entry() -> usize {
             } else {
                 get_vvar_data!(KERNEL_STACKS).lock()
             };
+            // warn!("thread_entry: scheduler use stack:");
             stack_handler.get_empty_stack(1)
         };
         jump_to_trampoline!(tep2_trampoline, new_sp);
@@ -629,6 +644,7 @@ pub extern "C" fn run_task(privilege: usize, stack_status: usize) -> usize {
             } else {
                 get_vvar_data!(KERNEL_STACKS).lock()
             };
+            // warn!("run_coroutine: coroutine use stack:");
             stack_handler.get_empty_stack(stack_status)
         };
         // unsafe {
@@ -644,6 +660,7 @@ pub extern "C" fn run_task(privilege: usize, stack_status: usize) -> usize {
                 get_vvar_data!(KERNEL_STACKS).lock()
             };
             let thread_stack = unsafe { StackVirtImpl::from_mut(thread_stack) };
+            // warn!("run_thread: thread use stack:");
             stack_handler.get_thread_stack(Some(thread_stack), stack_status);
         };
         // unsafe {

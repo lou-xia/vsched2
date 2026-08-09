@@ -194,6 +194,10 @@ impl StackHandler {
         if self.current_stack[cpu_id].is_none() {
             // 非空栈，需要切到空栈
             let empty_stack = self.alloc_stack();
+            // warn!(
+            //     "get_empty_stack: switch to stack {:#x}",
+            //     empty_stack as *mut _ as usize
+            // );
             let old_stack = self.set_current_stack(empty_stack, cpu_id);
             // info!("get_empty_stack");
             assert!(old_stack.is_none());
@@ -215,6 +219,10 @@ impl StackHandler {
     ) {
         let old_stack = {
             if let Some(stack) = thread_stack {
+                // warn!(
+                //     "get_thread_stack: switch to stack {:#x}",
+                //     stack as *mut _ as usize
+                // );
                 let stack = self.set_current_stack(stack, SMPVirtImpl::cpu_id());
                 // info!("get_thread_stack, thread_stack = Some");
                 stack

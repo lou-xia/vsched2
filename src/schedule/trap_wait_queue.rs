@@ -9,6 +9,7 @@
 use core::{marker::PhantomPinned, pin::Pin, sync::atomic::Ordering};
 
 use heapless::Deque;
+use kernel_guard::{BaseGuard, IrqSave};
 use lazyinit::LazyInit;
 use spin::mutex::Mutex;
 use vdso_helper::{get_vvar_data, log::warn};
@@ -104,6 +105,7 @@ impl TrapWaitQueue {
 }
 
 fn reschedule_handler(queue: &TrapWaitQueue, handler: &'static TaskVirtImpl) {
+    let state = IrqSave::acquire();
     handler.set_pid(0);
     handler.set_state(TaskState::Blocking);
     queue
@@ -113,6 +115,7 @@ fn reschedule_handler(queue: &TrapWaitQueue, handler: &'static TaskVirtImpl) {
         // TODO：满了怎么处理
         .expect("trap idle handler queue is full");
     handler.resched();
+    IrqSave::release(state);
 }
 
 fn get_idle_handler(queue: &Mutex<IdleHandlerQueue>) -> IdleHandler {

@@ -246,7 +246,7 @@ global_asm!(
         li a1, 3
         beq a0, a1, raw_utok_schedule
         # 不可达
-        .word 0xdeadbeef
+        .word 0x00000000
 
     # `raw_thread_entry`为os进行线程主动让权，保存上下文后进入的入口。
     raw_thread_entry:
@@ -264,14 +264,14 @@ global_asm!(
         li a1, 1
         beq s1, a1, raw_uschedule
         # 不可达
-        .word 0xdeadbeef
+        .word 0x00000000
 
     # raw_trap_handle:
     #     # `trap_handle`为`schedule_loop.rs`中的rust函数。
     #     call trap_handle
     #     j raw_run_task
     #     # 不可达
-    #     .word 0xdeadbeef
+    #     .word 0x00000000
 
     # `raw_kschdule`为内核初始化时进入调度器的入口。
     # 进入时，需设置s1=0, s2=0
@@ -287,7 +287,7 @@ global_asm!(
         li a1, 1
         beq a0, a1, raw_krun_utask
         # 不可达
-        .word 0xdeadbeef
+        .word 0x00000000
 
     raw_uschedule:
         # `uschedule`为`schedule_loop.rs`中的rust函数。
@@ -298,7 +298,7 @@ global_asm!(
         call uschedule
         j raw_run_task
         # 不可达
-        .word 0xdeadbeef
+        .word 0x00000000
 
     raw_utok_schedule:
         # `utok_schedule`为`schedule_loop.rs`中的rust函数。
@@ -312,7 +312,7 @@ global_asm!(
         li a1, 1
         beq a0, a1, raw_krun_utask
         # 不可达
-        .word 0xdeadbeef
+        .word 0x00000000
 
     # `raw_run_task`为从内核态调度器返回用户态调度器时返回的pc。
     # 从内核返回用户态时，需要设置正确的s1和s2。
@@ -340,7 +340,7 @@ global_asm!(
         li a1, 1
         beq s1, a1, raw_uschedule
         # 不可达
-        .word 0xdeadbeef
+        .word 0x00000000
 
     raw_krun_utask:
         # `krun_utask`为`schedule_loop.rs`中的rust函数。
@@ -350,7 +350,7 @@ global_asm!(
         mv a0, s2
         call krun_utask
         # 不可达
-        .word 0xdeadbeef
+        .word 0x00000000
         
 "#
 );

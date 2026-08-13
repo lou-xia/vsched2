@@ -161,6 +161,7 @@ fn create_new_handler(handler: &'static TaskVirtImpl) -> &'static TaskVirtImpl {
 /// 该函数只能通过api调用，不能直接调用。
 #[inline]
 pub(crate) fn trap_handler(scheduler: &Scheduler) {
+    let _state = IrqSave::acquire(); // 关中断
     let queue = &scheduler.trap_wait_queue;
     // let cpuid = SMPVirtImpl::cpu_id();
     // let queue = &self.queues[cpuid];

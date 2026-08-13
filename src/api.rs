@@ -354,6 +354,10 @@ pub extern "C" fn current_task_ptr() -> *const () {
 /// 需要在关中断环境下调用。
 #[unsafe(no_mangle)]
 pub extern "C" fn set_current_task_ptr(task: *const ()) -> *const () {
+    assert!(
+        task.is_null() == false,
+        "set_current_task_ptr: task is null"
+    );
     get_vvar_data!(CURRENT_TASK)[SMPVirtImpl::cpu_id()].swap(task as *mut (), Ordering::AcqRel)
 }
 

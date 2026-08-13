@@ -66,7 +66,11 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
                 // info!("[trap_entry:sync] old_sscratch={:#x}", old_sscratch);
                 let new_stack = stacks.alloc_stack();
-                // warn!("alloc trap stack: {:#x}", new_stack.base() as usize);
+                // warn!(
+                //     "alloc trap stack: {:#x}(base {:#x})",
+                //     new_stack as *mut _ as usize,
+                //     new_stack.base() as usize
+                // );
                 set_pre_stack!(new_stack.base());
                 // Recycle the old pre-save stack: set it as current_stack so
                 // run_task / krun_utask will reuse or dealloc it.
@@ -79,11 +83,8 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 //     }
                 // }
                 let current_stack = stacks.set_trap_stack(new_stack, cpu_id).unwrap();
-                // warn!(
-                //     "trap_entry/exception: scheduler use stack {:#x}",
-                //     current_stack as *mut _ as usize
-                // );
-                let _old = stacks.set_current_stack(current_stack, cpu_id);
+                let old = stacks.set_current_stack(current_stack, cpu_id);
+                assert!(old.is_none());
                 drop(stacks);
                 let current_task = get_current_task();
                 // 关于current_task.set_state、push_prev_task和scheduler.push_trap的先后关系：
@@ -140,25 +141,26 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                     // 普通任务中断走下面的路径。
                     let next_trap_stack =
                         unsafe { StackVirtImpl::from_mut(current_task.thread_stack()) };
+                    // warn!(
+                    //     "set trap stack: {:#x}(base {:#x})",
+                    //     next_trap_stack as *mut _ as usize,
+                    //     next_trap_stack.base() as usize
+                    // );
                     set_pre_stack!(next_trap_stack.base());
                     let current_stack = stacks
                         .set_trap_stack(next_trap_stack, cpu_id)
                         .expect("scheduler wait context has no trap stack");
-                    // warn!(
-                    //     "trap_entry/interrupt/from_scheduler: scheduler use stack {:#x}",
-                    //     current_stack as *mut _ as usize
-                    // );
                     current_stack
                 } else {
                     // info!("[trap_entry:irq] old_sscratch={:#x}", old_sscratch);
                     let new_stack = stacks.alloc_stack();
-                    // warn!("alloc trap stack: {:#x}", new_stack.base() as usize);
+                    // warn!(
+                    //     "alloc trap stack: {:#x}(base {:#x})",
+                    //     new_stack as *mut _ as usize,
+                    //     new_stack.base() as usize
+                    // );
                     set_pre_stack!(new_stack.base());
                     let current_stack = stacks.set_trap_stack(new_stack, cpu_id).unwrap();
-                    // warn!(
-                    //     "trap_entry/interrupt/from_task: scheduler use stack {:#x}",
-                    //     current_stack as *mut _ as usize
-                    // );
                     current_stack
                 };
                 // Recycle the old pre-save stack: set it as current_stack so
@@ -180,13 +182,8 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 // 因此：
                 // 一方面，如果任务在push_trap之前已经再次运行了，就可能导致push_trap获取的上下文不正确。
                 // 另一方面，push_trap不会导致任务可能被运行，从而set_state和push_prev_task使用的上下文正确。
-                let _old = stacks.set_current_stack(current_stack, cpu_id);
-                if scheduler_waiting {
-                    assert!(
-                        _old.is_none(),
-                        "scheduler wait stack was not removed before trap rotation"
-                    );
-                }
+                let old = stacks.set_current_stack(current_stack, cpu_id);
+                assert!(old.is_none());
                 drop(stacks);
 
                 let scheduler =
@@ -263,7 +260,6 @@ pub extern "C" fn thread_entry() -> usize {
             } else {
                 get_vvar_data!(KERNEL_STACKS).lock()
             };
-            // warn!("thread_entry: scheduler use stack:");
             stack_handler.get_empty_stack(1)
         };
         jump_to_trampoline!(tep2_trampoline, new_sp);
@@ -353,7 +349,6 @@ pub extern "C" fn kschedule() -> usize {
     let scheduler = unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) };
     let current_pid = scheduler.global_index();
     assert!(current_pid == 0);
-    // push_prev_task();
     loop {
         let next_pid = process_schedule(scheduler);
         let res = ktask_schedule(next_pid);
@@ -374,7 +369,6 @@ pub extern "C" fn kschedule() -> usize {
 #[no_mangle]
 pub extern "C" fn uschedule(stack_status: usize) {
     let scheduler = USER_SCHEDULER.get().unwrap();
-    // push_prev_task();
     loop {
         let next_pid = process_schedule(scheduler);
 

@@ -137,15 +137,49 @@ impl StackHandler {
         stack: &'static mut StackVirtImpl,
         cpu_id: usize,
     ) -> Option<&'static mut StackVirtImpl> {
-        // info!("set current_stack: {:#x}", stack as *mut _ as usize);
-        self.current_stack[cpu_id].replace(stack)
+        let stack_ptr = stack as *mut _ as usize;
+        let stack_base = stack.base() as usize;
+        // 检查当前栈是否在其它核心上被使用
+        for i in (0..cpu_id).chain(cpu_id + 1..CPU_NUM) {
+            if let Some(current_stack) = &self.current_stack[i] {
+                let current_stack_ptr = (*current_stack) as *const _ as usize;
+                let current_base = current_stack.base() as usize;
+                if current_stack_ptr == stack_ptr && current_base == stack_base {
+                    panic!(
+                        "Error: Stack {:#x}(base {:#x}) is already in use by CPU {}",
+                        stack_ptr, stack_base, i
+                    );
+                }
+            }
+        }
+        let old_stack = self.current_stack[cpu_id].replace(stack);
+        if let Some(old_stack) = old_stack {
+            let old_stack_ptr = old_stack as *mut _ as usize;
+            let old_base = old_stack.base() as usize;
+            // warn!(
+            //     "set current stack: {:#x}(base {:#x}) -> {:#x}(base {:#x})",
+            //     old_stack_ptr, old_base, stack_ptr, stack_base
+            // );
+            Some(old_stack)
+        } else {
+            // warn!(
+            //     "set current stack: None -> {:#x}(base {:#x})",
+            //     stack_ptr, stack_base
+            // );
+            None
+        }
     }
 
     pub(crate) fn take_current_stack(&mut self, cpu_id: usize) -> &'static mut StackVirtImpl {
         let stack = self.current_stack[cpu_id]
             .take()
             .expect("Error: Failed to take current stack");
-        // info!("take current_stack: {:#x}", stack as *mut _ as usize);
+        let stack_ptr = stack as *mut _ as usize;
+        let stack_base = stack.base() as usize;
+        // warn!(
+        //     "set current stack: {:#x}(base {:#x}) -> None)",
+        //     stack_ptr, stack_base
+        // );
         stack
     }
 

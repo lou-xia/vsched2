@@ -65,7 +65,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                 assert!(!scheduler_waiting, "trap entry: cpu {cpu_id} is sleeping");
                 let mut stacks = get_vvar_data!(KERNEL_STACKS).lock();
                 // info!("[trap_entry:sync] old_sscratch={:#x}", old_sscratch);
-                let new_stack = stacks.alloc_stack();
+                let new_stack = stacks.alloc_stack(cpu_id);
                 // warn!(
                 //     "alloc trap stack: {:#x}(base {:#x})",
                 //     new_stack as *mut _ as usize,
@@ -153,7 +153,7 @@ pub extern "C" fn trap_entry(trap_type: usize, privilege: usize) -> usize {
                     current_stack
                 } else {
                     // info!("[trap_entry:irq] old_sscratch={:#x}", old_sscratch);
-                    let new_stack = stacks.alloc_stack();
+                    let new_stack = stacks.alloc_stack(cpu_id);
                     // warn!(
                     //     "alloc trap stack: {:#x}(base {:#x})",
                     //     new_stack as *mut _ as usize,

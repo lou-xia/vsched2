@@ -91,7 +91,8 @@ use vdso_helper::log::warn;
 #[derive(Debug)]
 pub struct StackHandler {
     /// 空栈的集合
-    pub(crate) free_stacks: FnvIndexMap<usize, &'static mut StackVirtImpl, STACK_POOL_SIZE>,
+    pub(crate) free_stacks:
+        [FnvIndexMap<usize, &'static mut StackVirtImpl, STACK_POOL_SIZE>; CPU_NUM],
     /// 当前使用的栈
     pub(crate) current_stack: [Option<&'static mut StackVirtImpl>; CPU_NUM],
     /// 放入sscratch等寄存器中，供中断入口使用的栈
@@ -114,19 +115,19 @@ impl StackHandler {
     //     }
     // }
 
-    pub(crate) fn alloc_stack(&mut self) -> &'static mut StackVirtImpl {
+    pub(crate) fn alloc_stack(&mut self, cpu_id: usize) -> &'static mut StackVirtImpl {
         // 这里因为持有的是可变引用，所以两次获取应该没有问题？
-        if let Some((&addr, _)) = self.free_stacks.iter().next() {
-            self.free_stacks.remove(&addr).unwrap()
+        if let Some((&addr, _)) = self.free_stacks[cpu_id].iter().next() {
+            self.free_stacks[cpu_id].remove(&addr).unwrap()
         } else {
             unsafe { StackVirtImpl::from_mut(StackVirtImpl::alloc()) }
         }
     }
 
-    pub(crate) fn dealloc_stack(&mut self, stack: &'static mut StackVirtImpl) {
+    pub(crate) fn dealloc_stack(&mut self, stack: &'static mut StackVirtImpl, cpu_id: usize) {
         let addr = stack as *mut StackVirtImpl as usize;
-        self.free_stacks.remove(&addr);
-        match self.free_stacks.insert(addr, stack) {
+        self.free_stacks[cpu_id].remove(&addr);
+        match self.free_stacks[cpu_id].insert(addr, stack) {
             Err((_, stack)) => stack.dealloc(),
             Ok(_) => {}
         }
@@ -196,7 +197,7 @@ impl StackHandler {
         //     let old = self.trap_stack[i].replace(stack);
         //     assert!(old.is_none());
         // }
-        let stack = self.alloc_stack();
+        let stack = self.alloc_stack(cpu_id);
         let base = stack.base();
         // warn!("alloc trap stack: {:#x}", base as usize);
         let old = self.trap_stack[cpu_id].replace(stack);
@@ -227,7 +228,7 @@ impl StackHandler {
         let cpu_id = SMPVirtImpl::cpu_id();
         if self.current_stack[cpu_id].is_none() {
             // 非空栈，需要切到空栈
-            let empty_stack = self.alloc_stack();
+            let empty_stack = self.alloc_stack(cpu_id);
             // warn!(
             //     "get_empty_stack: switch to stack {:#x}",
             //     empty_stack as *mut _ as usize
@@ -268,7 +269,8 @@ impl StackHandler {
             }
         };
         if let Some(old_stack) = old_stack {
-            self.dealloc_stack(old_stack);
+            let cpu_id = SMPVirtImpl::cpu_id();
+            self.dealloc_stack(old_stack, cpu_id);
         }
     }
 }
@@ -277,7 +279,7 @@ impl Default for StackHandler {
     fn default() -> Self {
         // Self::new() 这样合适还是现在这样全0之后再初始化合适？
         Self {
-            free_stacks: FnvIndexMap::new(),
+            free_stacks: [const { FnvIndexMap::new() }; CPU_NUM],
             current_stack: [const { None }; CPU_NUM],
             trap_stack: [const { None }; CPU_NUM],
         }

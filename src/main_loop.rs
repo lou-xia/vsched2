@@ -472,6 +472,7 @@ fn push_prev_task(state: TaskState) {
             let target = if current_task.is_kernel() {
                 unsafe { &*get_vvar_data!(KERNEL_SCHEDULER).load(Ordering::Acquire) }
             } else {
+                // 这里好像有问题，为什么没找到对应的用户调度器就要放入内核调度器？
                 let pid = current_task.pid();
                 let scheduler_ptr = get_vvar_data!(PROCESS_INFO_TABLE).table[pid]
                     .scheduler

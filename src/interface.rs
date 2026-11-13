@@ -188,7 +188,7 @@ trait_interface! {
         ///
         /// 地址运算的方式如下：
         ///
-        /// 以下描述可以参考![此流程图](../doc/assets/get_user_data流程图.png)。
+        /// 以下描述可以参考![此流程图](../doc/archive/0.初版设计/get_user_data流程图.png)。
         ///
         /// 1. 获取内核态中对应变量（`A`）相对于vdso基址（`KBASE`）的虚拟地址偏移量（`offset`）
         /// 2. 获取用户空间中的vdso基址（虚拟地址）（`UBASE`）

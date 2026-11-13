@@ -28,7 +28,7 @@ trap_handler如果处理完了所有的trap，则阻塞在trap_wait_queue的阻�
 
 对于从trap_wait_queue的阻塞队列中取出trap_handler的过程，参考流程图中的“线程/协程唤醒”流程。只是修改任务状态（Blocked-->Ready）后，不需放入就绪队列，而是直接把任务传出`take_task`函数中；如果修改任务状态为（Blocking-->Ready），则被唤醒的trap_handler将由调度器继续运行，本次`take_task`返回None即可。
 
-![流程图](../26.7.13~26.7.19/任务及其状态变化流程图.png)
+![流程图](任务及其状态变化流程图.png)
 
 ### 优先级设置问题
 

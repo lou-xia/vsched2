@@ -41,19 +41,32 @@
 
 两个横切件：`GLOSSARY.md`（术语 ↔ 代码符号）与 `doc/questions.md`（唯一 TODO 台账）。
 
-#### 该看哪一篇
+#### 入口分工
 
-| 问题 | 去看 |
-|---|---|
-| 现在是什么样？ | `reference/` |
-| 应该是什么样？ | `design/` |
-| 为什么这么决定？ | `decisions/` |
-| 我们查到了什么？ | `analysis/` |
-| 还没定？ | `questions.md` |
-| 怎么写/有哪些状态？ | `conventions.md` |
-| 改完要更新什么？ | `maintenance.md` |
-| 下一步做什么？ | `plans/` |
-| 以前怎么做的？ | `archive/` |
+| 文件 | 读者 | 唯一职责 | 不该写 |
+|---|---|---|---|
+| 根 `README.md` | 第一次来的人 | 项目是什么、为什么、怎么跑 | 文档细节、AI 规则 |
+| [AGENTS.md](../AGENTS.md) | AI agent | 怎么工作、先读什么、硬规则 | 项目长介绍、完整文档地图 |
+| 本文件 | 文档作者/维护者/AI | 文档地图、生命周期、阅读路径 | 项目介绍、AI 规则 |
+
+#### 该看哪一篇（也是事实所有权）
+
+同一事实只在“唯一来源”里写全文；其他文档最多一句摘要 + 链接。
+
+| 问题/事实 | 去看（也是唯一来源） | 其他文档怎么写 |
+|---|---|---|
+| 项目是什么、为什么 | 根 `README.md` | 一句话 + 链接 |
+| 当前阶段、下一步 | [文档整理计划.md](文档整理计划.md)（未来 `status.md`） | 一句话 + 链接 |
+| 现在是什么样？ | `reference/README.md` → `reference/<topic>.md` | 链接到条目 |
+| 应该是什么样？ | `design/README.md` → `design/<topic>.md` | 链接到设计节 |
+| 为什么这么决定？ | `decisions/NNNN-<slug>.md` | 引用 `D-xxx` |
+| 我们查到了什么？ | `analysis/<topic>/...md` | 链接 |
+| 还没定？ | `questions.md` | 引用 `Q-xxx` |
+| 怎么写/有哪些状态？ | [conventions.md](conventions.md) | 链接类型卡 |
+| 改完要更新什么？ | [maintenance.md](maintenance.md) | 链接场景 |
+| 下一步做什么？ | `plans/<id>/README.md` | 链接 plan |
+| 以前怎么做的？ | `archive/README.md` | 链接历史 |
+| 构建/验证 | [编译命令.md](编译命令.md)（未来 `reference/build-and-test.md`） | 一条命令 + 链接 |
 
 ### 1.2 现有文档（迁移前，在迁移完成后删除）
 
@@ -80,8 +93,8 @@
 
 ```text
 vsched2/
-├── README.md                     # planned：项目是什么、当前阶段、入口
-├── AGENTS.md                     # planned：AI 路由与硬规则
+├── README.md                     # existing：项目介绍、快速开始、入口
+├── AGENTS.md                     # existing：AI 路由与硬规则
 ├── GLOSSARY.md                   # planned：术语 ↔ 代码符号
 └── doc/
     ├── README.md                 # existing：地图与生命周期

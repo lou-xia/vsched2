@@ -61,7 +61,7 @@
 | 现在是什么样？ | `reference/README.md` → `reference/<topic>.md` | 链接到条目 |
 | 应该是什么样？ | `design/README.md` → `design/<topic>.md` | 链接到设计节 |
 | 新版设计打算改什么？ | [analysis/new-design-planned-changes.md](analysis/new-design-planned-changes.md) | 引用修改项 |
-| 为什么这么决定？ | `decisions/NNNN-<slug>.md` | 引用 `D-xxx` |
+| 为什么这么决定？ | [decisions/README.md](decisions/README.md) | 引用 `D-xxx` |
 | 我们查到了什么？ | `analysis/<topic>/...md` | 链接 |
 | 还没定？ | [questions.md](questions.md) | 引用 `Q-xxx` |
 | 怎么写/有哪些状态？ | [conventions.md](conventions.md) | 链接类型卡 |
@@ -106,7 +106,8 @@ vsched2/
     ├── questions.md              # existing：未决问题台账
     ├── questions-closed.md       # 可选：关闭项过多时拆出
     ├── design/
-    │   ├── README.md             # 索引、依赖图、状态
+    │   ├── README.md             # existing：设计索引/状态
+    │   ├── user-interrupt-context.md  # existing：用户态任务中断上下文
     │   ├── task-model.md         # 任务/线程/协程/任务树/上下文类型
     │   ├── os-boundary.md        # OS 与调度器各自负责什么
     │   ├── scheduler.md          # 事件源/优先级/perCPU/共享
@@ -122,7 +123,8 @@ vsched2/
     │   ├── concurrency.md        # 锁序/关中断/栈所有权/不变量
     │   └── build-and-test.md     # 构建矩阵/验证方式
     ├── decisions/
-    │   └── README.md             # ADR 索引
+    │   ├── README.md             # existing：决策索引
+    │   └── 0001-user-task-interrupt-ownership.md  # existing：D-001
     ├── plans/
     │   ├── README.md             # existing：计划索引
     │   └── 0003-scheduler-refactor/      # existing：README + prep-schedule + step-*

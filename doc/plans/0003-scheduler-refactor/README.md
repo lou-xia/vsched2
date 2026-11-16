@@ -130,6 +130,8 @@ applies_to:
 
 - [提交前工作安排](prep-schedule.md)
 - [新版设计修改项](../../analysis/new-design-planned-changes.md)
+- [用户态任务中断上下文](../../design/user-interrupt-context.md)
+- [D-001：中断任务归属](../../decisions/0001-user-task-interrupt-ownership.md)
 - [任务切换模型（新版调度算法）](../../draft/新版设计/任务切换模型（新版调度算法）.png)
 - [共享调度器模块设计文档](../../draft/新版设计/共享调度器模块设计文档.md)
 - [可重入设计文档](../../draft/可重入分析/调度器可重入设计文档.md)

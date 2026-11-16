@@ -20,6 +20,7 @@ vsched2 是 Rust `no_std` 的可移植任务调度模块：通过 vDSO 在内核
 | 任务 | 先看 | 代码 |
 |---|---|---|
 | 调度循环、trap、栈、切换路径 | [设计文档](doc/draft/新版设计/共享调度器模块设计文档.md)、[代码实现设计](doc/draft/新版设计/共享调度器模块代码实现设计.md) | `src/main_loop.rs`、`src/stack/` |
+| 用户态任务被中断后的归属/上下文 | [user-interrupt-context](doc/design/user-interrupt-context.md) | `src/main_loop.rs`、`src/interface.rs` |
 | 接口、Task trait、数据结构 | [数据结构修改](doc/draft/新版设计/数据结构修改.md)、[代码实现设计](doc/draft/新版设计/共享调度器模块代码实现设计.md) 的接口/数据结构节 | `src/interface.rs`、`src/api.rs` |
 | 新版设计计划改什么 | [new-design-planned-changes](doc/analysis/new-design-planned-changes.md) | — |
 | VVAR、当前任务、可重入 | [可重入设计文档](doc/draft/可重入分析/调度器可重入设计文档.md)、[二维分析](doc/draft/可重入分析/二维分析.xlsx) | `src/current.rs` |

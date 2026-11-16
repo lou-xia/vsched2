@@ -17,6 +17,7 @@ vsched2 是一个 Rust `no_std` 的可移植任务调度模块。它通过 vDSO 
 - `doc/draft/` 是迁移起点，混合“已实现/目标/待定”，不能当现状。
 - 目标文档结构（`design/`、`reference/`、`plans/` 等）多数仍是 planned，见 [doc/README.md 1.3](doc/README.md#13-目标结构)。
 - 当前阶段与下一步见 [doc/文档整理计划.md](doc/文档整理计划.md)。
+- 当前重构计划见 [0003-scheduler-refactor](doc/plans/0003-scheduler-refactor/README.md)。
 
 ## 快速开始
 
@@ -42,8 +43,11 @@ CPU_NUM=4 cargo run
 ## 文档与协作
 
 - [doc/README.md](doc/README.md)：文档地图、生命周期、阅读路径。
+- [GLOSSARY.md](GLOSSARY.md)：术语与代码符号。
 - [AGENTS.md](AGENTS.md)：AI agent 的路由与硬规则。
 - [doc/conventions.md](doc/conventions.md)：文档类型、状态机、格式。
 - [doc/maintenance.md](doc/maintenance.md)：改完代码/文档后要更新什么。
+- [doc/questions.md](doc/questions.md)：未决问题台账。
+- [doc/plans/README.md](doc/plans/README.md)：计划索引。
 
 第一次读建议从 [doc/README.md](doc/README.md) 的“现在（迁移前）”路径开始。

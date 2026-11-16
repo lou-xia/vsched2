@@ -1,6 +1,6 @@
 # 文档地图
 
-> 本文件是 `doc/` 的入口：说明文档放在哪、生命周期是什么、从哪里读。每篇怎么写见 [conventions.md](conventions.md)，改代码时同步哪篇见 [maintenance.md](maintenance.md)；落地顺序见 [文档整理计划.md](文档整理计划.md)（迁移后由 `plans/README.md` 接管）。
+> 本文件是 `doc/` 的入口：说明文档放在哪、生命周期是什么、从哪里读。每篇怎么写见 [conventions.md](conventions.md)，改代码时同步哪篇见 [maintenance.md](maintenance.md)；文档落地顺序见 [文档整理计划.md](文档整理计划.md)，重构计划见 [plans/README.md](plans/README.md)。
 
 ## 1. 文档地图
 
@@ -56,15 +56,17 @@
 | 问题/事实 | 去看（也是唯一来源） | 其他文档怎么写 |
 |---|---|---|
 | 项目是什么、为什么 | 根 `README.md` | 一句话 + 链接 |
+| 术语/命名？ | [GLOSSARY.md](../GLOSSARY.md) | 引用术语名，不另造同义词 |
 | 当前阶段、下一步 | [文档整理计划.md](文档整理计划.md)（未来 `status.md`） | 一句话 + 链接 |
 | 现在是什么样？ | `reference/README.md` → `reference/<topic>.md` | 链接到条目 |
 | 应该是什么样？ | `design/README.md` → `design/<topic>.md` | 链接到设计节 |
+| 新版设计打算改什么？ | [analysis/new-design-planned-changes.md](analysis/new-design-planned-changes.md) | 引用修改项 |
 | 为什么这么决定？ | `decisions/NNNN-<slug>.md` | 引用 `D-xxx` |
 | 我们查到了什么？ | `analysis/<topic>/...md` | 链接 |
-| 还没定？ | `questions.md` | 引用 `Q-xxx` |
+| 还没定？ | [questions.md](questions.md) | 引用 `Q-xxx` |
 | 怎么写/有哪些状态？ | [conventions.md](conventions.md) | 链接类型卡 |
 | 改完要更新什么？ | [maintenance.md](maintenance.md) | 链接场景 |
-| 下一步做什么？ | `plans/<id>/README.md` | 链接 plan |
+| 下一步做什么？ | [plans/README.md](plans/README.md) | 链接 plan |
 | 以前怎么做的？ | `archive/README.md` | 链接历史 |
 | 构建/验证 | [编译命令.md](编译命令.md)（未来 `reference/build-and-test.md`） | 一条命令 + 链接 |
 
@@ -75,7 +77,7 @@
 | 路径 | 类型 | 回答什么 | 状态 | 去向 |
 |---|---|---|---|---|
 | [编译命令.md](编译命令.md) | reference 素材 | 怎么编译调度器 | current | 并入 `reference/build-and-test.md` |
-| [文档整理计划.md](文档整理计划.md) | plan | 文档落地的阶段与顺序 | draft | 迁到 `plans/README.md`；进度留在计划，`status.md` 只放能力差距 |
+| [文档整理计划.md](文档整理计划.md) | plan | 文档落地的阶段与顺序 | draft | 保留在 doc/ 作为文档落地记录；完成后归档 |
 | [共享调度器模块设计文档](draft/新版设计/共享调度器模块设计文档.md) | design | 任务模型、事件源、调度路径、可重入方向 | draft | 拆到 `design/*` |
 | [共享调度器模块代码实现设计](draft/新版设计/共享调度器模块代码实现设计.md) | design | 模块职责、接口、数据结构、上下文保存约定 | draft | 接口→`reference/interfaces.md`；结构→`reference/module-map.md`；设计→`design/*` |
 | [数据结构修改](draft/新版设计/数据结构修改.md) | design 素材 | TCB、Trap、状态字段的修改提案 | draft | 转成接口变更表或 design 的差异表，不单独保留 |
@@ -95,13 +97,13 @@
 vsched2/
 ├── README.md                     # existing：项目介绍、快速开始、入口
 ├── AGENTS.md                     # existing：AI 路由与硬规则
-├── GLOSSARY.md                   # planned：术语 ↔ 代码符号
+├── GLOSSARY.md                   # existing：术语 ↔ 代码符号
 └── doc/
     ├── README.md                 # existing：地图与生命周期
     ├── conventions.md            # existing：类型、状态机、格式、通用约定
     ├── maintenance.md            # existing：按场景的维护规则
     ├── status.md                 # planned：能力 × 设计/实现/验证/差距
-    ├── questions.md              # planned：未决问题台账
+    ├── questions.md              # existing：未决问题台账
     ├── questions-closed.md       # 可选：关闭项过多时拆出
     ├── design/
     │   ├── README.md             # 索引、依赖图、状态
@@ -122,10 +124,11 @@ vsched2/
     ├── decisions/
     │   └── README.md             # ADR 索引
     ├── plans/
-    │   ├── README.md             # 计划状态/阻塞 Q/路线图
-    │   └── 0001-.../             # 只有 active 计划才建；README + step-*
+    │   ├── README.md             # existing：计划索引
+    │   └── 0003-scheduler-refactor/      # existing：README + prep-schedule + step-*
     ├── analysis/
-    │   └── reentrancy/           # 判定标准/矩阵/结论
+    │   ├── new-design-planned-changes.md  # existing：新版设计 vs 实现
+    │   └── reentrancy/           # planned：判定标准/矩阵/结论
     ├── assets/                   # 跨文档共享的图
     ├── draft/                    # existing：迁移中，内容逐步搬到 design/reference
     └── archive/                  # existing：历史，只读
@@ -152,7 +155,7 @@ vsched2/
 | 目标 | 路径 |
 |---|---|
 | 5 分钟了解 | 根 `README.md` → `doc/README.md` → `design/README.md` |
-| 接手实现 | `design/scheduling-loop.md` → `reference/interfaces.md` → `reference/concurrency.md` → `plans/current/` |
+| 接手实现 | `design/scheduling-loop.md` → `reference/interfaces.md` → `reference/concurrency.md` → `plans/0003-scheduler-refactor/README.md` |
 | 审查正确性 | `reference/state-machine.md` → `reference/concurrency.md` → `questions.md` |
 | 写文档 | `conventions.md` |
 | 维护文档 | `maintenance.md` |

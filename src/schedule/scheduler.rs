@@ -364,6 +364,7 @@ impl Scheduler {
                 self.get_and_update_current_prio();
             } else {
                 self.get_and_update_all_prio();
+                // Q-026：
                 // 目前不主动发送ipi唤醒休眠核心，
                 // 因为在测例里出现了在任务中接收到ipi --> 将任务放回就绪队列 --> 发送ipi的循环，
                 // 导致出现了大量的中断请求。

@@ -40,7 +40,7 @@
 
 | ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| Q-006 | P0 | 调度器的加锁/释放锁时机与锁序？哪些锁允许在用户态持有？ | 并发 | 锁/可重入 | 未定 | 可重入 | [设计·路径枚举](<draft/新版设计/共享调度器模块设计文档.md#全部路径枚举>) | open |
+| Q-006 | P0 | 调度器的加锁/释放锁时机、锁序，以及开关中断的时机/范围？哪些锁允许在用户态持有？ | 并发 | 锁/IRQ/可重入 | 未定；IRQ 时机可能再改 | 可重入 | [设计·调度循环](design/scheduling-loop.md)、[设计·路径枚举](<draft/新版设计/共享调度器模块设计文档.md#全部路径枚举>) | open |
 | Q-007 | P0 | 内核恢复无法在用户态恢复的任务（中断上下文）的路径？状态更新与任务所有权如何保证？ | 设计 | 中断上下文/所有权 | 未定 | 可重入 | [设计·路径枚举](<draft/新版设计/共享调度器模块设计文档.md#全部路径枚举>)、[设计·用户中断](design/user-interrupt-context.md)、[D-001](decisions/0001-user-task-interrupt-ownership.md) | open |
 | Q-008 | P1 | 可重入判定标准的 P3/P4 是什么？ | 设计 | 可重入评审 | 只写到 P2 | 可重入 | [可重入·判定标准](<draft/可重入分析/调度器可重入设计文档.md#状态一致判定标准>) | open |
 | Q-009 | P1 | 上下文栈的结构、同步、容量、恢复顺序？恢复时的拷贝能否优化掉？ | 设计 | 上下文栈/可重入 | 候选 `Vec`/无锁栈，未定 | 可重入 | [可重入·上下文覆盖](<draft/可重入分析/调度器可重入设计文档.md#1-任务上下文覆盖>) | open |
@@ -55,7 +55,7 @@
 | ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
 |---|---|---|---|---|---|---|---|---|
 | Q-015 | P1 | 栈的保留与回收时机？仍被当前执行流/挂起现场引用的栈如何防止提前复用？ | 设计 | 栈生命周期 | 未定 | 栈/可重入 | [设计·备忘](<draft/新版设计/共享调度器模块设计文档.md#备忘>) | open |
-| Q-016 | P1 | 如何最终解决调度器与线程共享同一个栈的同步问题（`take_current_stack` 临时设计）？ | 实现 | 栈/调度循环 | 临时设计 | 栈 | [api.rs:409](../src/api.rs#L409) | open |
+| Q-016 | P1 | 如何最终解决调度器与线程共享同一个栈的同步问题（`take_current_stack` 临时设计）？线程主动让出后以非空栈进入调度器时，同一栈可能被调度器和其它核心上恢复的线程同时使用。 | 实现 | 栈/调度循环 | 临时设计；Step 3 可能重排栈保存顺序 | 栈 | [api.rs:409](../src/api.rs#L409)、[设计·调度循环](design/scheduling-loop.md) | open |
 | Q-027 | P1 | `main_loop` 中栈切换是否影响函数返回？如何验证？ | 实现 | 栈/切换 | 未验证 | 栈 | [main_loop.rs:641](../src/main_loop.rs#L641) | open |
 | Q-025 | P2 | `get_stack_type` 用 sp/fp 判断空栈是否正确？如何替换？ | 实现 | 栈/调度循环 | 已知不对 | 栈 | [trampoline.rs:11](../src/stack/trampoline.rs#L11) | open |
 | Q-035 | P2 | `Context::into_user` 的用户栈分配/回收是否进入 `Context` trait？ | 接口 | 用户栈 | `into_user(ustack)` 接收栈顶；无回收接口 | 栈 | [代码实现设计·任务切换](<draft/新版设计/共享调度器模块代码实现设计.md#任务切换模块>)、[interface.rs:112](../src/interface.rs#L112) | open |
@@ -66,9 +66,11 @@
 |---|---|---|---|---|---|---|---|---|
 | Q-029 | P0 | `trap_handler` 是否与调度代码合并？ | 设计 | trap/调度循环 | 可合并，未拍板 | trap | [设计·trap_handler](<draft/新版设计/共享调度器模块设计文档.md#trap_handler的内容>) | open |
 | Q-030 | P0 | `TrapInfo` 在 trap 入口还是 `trap_handler` 中入队？ | 设计 | trap 队列/职责 | 倾向入口后调度代码 | trap | [设计·trap_handler](<draft/新版设计/共享调度器模块设计文档.md#trap_handler的内容>) | leaning |
+| Q-039 | P1 | Step 1 能否阻止“中断→线程/中断”非法路径？是否必须在 Step 2 让中断处理不再走调度？ | 设计 | trap/Step 2 | 路径表标为非法，但 Step 1 无法保证；中断响应中可能新增更高优先级任务 | trap/Step 2 | [设计·调度循环](design/scheduling-loop.md)、[0003 计划](plans/0003-scheduler-refactor/README.md) | open |
 | Q-004 | P2 | 删除 `TrapInfo::new_handler` / `IdleHandler` 后，trap 处理任务和 `SCHEDULER_WAIT_CONTEXT` 如何创建？ | 接口 | trap/初始化 | 提案删除，替代未定 | trap | [数据结构修改·trap](<draft/新版设计/数据结构修改.md#trap-相关>) | leaning |
 | Q-024 | P2 | `trap_wait_queue` 中“用户态任务一定位于当前地址空间”的假设是否成立？ | 实现 | trap/地址空间 | 未确认 | trap | [trap_wait_queue.rs:160](../src/schedule/trap_wait_queue.rs#L160) | open |
 | Q-033 | P2 | `TrapInfo::handle` 收窄后，处理任务通过什么接口接收通信？ | 接口 | trap 通信 | `handle` 仍直接接收被 trap 任务 | trap | [数据结构修改·trap](<draft/新版设计/数据结构修改.md#trap-相关>)、[interface.rs:140](../src/interface.rs#L140) | open |
+| Q-040 | P2 | “内核态→用户态”的“线程/协程→中断”路径需要先回用户态选任务再陷入内核恢复，两次特权级切换的性能开销是否可接受？ | 设计 | 切换/性能 | 路径表已列，未评估 | 性能/Step 1 | [设计·调度循环](design/scheduling-loop.md) | open |
 | Q-021 | P3 | 内核态服务任务（`trap_handler`、异常处理等）是否也关闭中断以优化性能？ | 设计 | 中断/性能 | 后续设计未考虑 | 设计 | [设计·中断](<draft/新版设计/共享调度器模块设计文档.md#中断>) | open |
 
 ### 共享数据与初始化
@@ -84,7 +86,7 @@
 
 | ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| Q-036 | P1 | 空栈进入调度器是否必须？多核同步如何解决？ | 设计 | 多核/栈 | 当前有空栈/非空栈入口；图注“理想可用非空栈” | 多核 | [任务切换模型](<draft/新版设计/任务切换模型（新版调度算法）.drawio>)、[main_loop.rs:54](../src/main_loop.rs#L54) | open |
+| Q-036 | P1 | 空栈进入调度器是否必须？多核同步如何解决？非空栈路径也有同一栈被调度器/其它核心线程同时使用的风险。 | 设计 | 多核/栈 | 当前有空栈/非空栈入口；Step 3 可能重排栈保存顺序 | 多核 | [设计·调度循环](design/scheduling-loop.md)、[main_loop.rs:54](../src/main_loop.rs#L54) | open |
 | Q-017 | P2 | 多核唤醒/IPI 策略：恢复主动 IPI，还是只靠时钟中断？ | 实现 | 多核/唤醒 | 当前不主动 IPI | 多核 | [scheduler.rs:373](../src/schedule/scheduler.rs#L373) | open |
 | Q-026 | P2 | `wait_for_runnable_task` 的休眠循环 bug 如何解决？ | 实现 | 多核/休眠 | 有 bug | 多核 | [main_loop.rs:378](../src/main_loop.rs#L378) | open |
 

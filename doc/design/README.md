@@ -5,3 +5,4 @@
 | 设计 | 状态 | 回答 |
 |---|---|---|
 | [user-interrupt-context.md](user-interrupt-context.md) | draft | 过渡稿：用户态任务被内核级中断打断后的任务归属、上下文归属和保存/恢复；决策见 [D-001](../decisions/0001-user-task-interrupt-ownership.md) |
+| [scheduling-loop.md](scheduling-loop.md) | draft | 调度循环目标路径：内含路径表、新增中断恢复路径和步骤 1 差异 |

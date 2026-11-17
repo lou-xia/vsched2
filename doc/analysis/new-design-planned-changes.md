@@ -57,7 +57,7 @@ applies_to:
 | “事件源”改名 | 给事件源接口换一个更合适的名字 | 它不只“产生事件”，还要保存等待任务、接收事件、提供就绪任务 | 仍叫 `EventSource` / `EventSourceVtable` | 未实现 | [设计·事件源](<../draft/新版设计/共享调度器模块设计文档.md#事件源>)、[event_source.rs:119](../../src/schedule/event_source.rs#L119) |
 | 扩展事件源职责 | 事件源对象应保存等待任务、接收并处理事件、提供就绪任务；可动态创建，一个事件源可对应多个任务 | 通信结果必须落到事件源；事件源是就绪任务进入调度器的接口 | 当前 trait 只有 `hightest_priority`/`take_task`；实现可自行保存任务，但接口不表达完整职责 | 部分实现 | [设计·事件源](<../draft/新版设计/共享调度器模块设计文档.md#事件源>)、[event_source.rs:119](../../src/schedule/event_source.rs#L119) |
 | 事件源数组加活跃标志 | `sources` 元素包含事件源指针、vtable、活跃标志 | 不活跃的事件源可直接返回最低优先级，降低查询开销 | `EventSourceEntry` 保存内核/用户两份数据指针和 vtable，没有活跃标志 | 文档待更新 | [代码实现设计·数据结构](<../draft/新版设计/共享调度器模块代码实现设计.md>)、[scheduler.rs:52](../../src/schedule/scheduler.rs#L52) |
-| 全局最高优先级字段 | 维护全局最高优先级；进入内核时遍历调低 | 快速比较地址空间，减少每次全表扫描 | 每个进程按 CPU 保存 `highest_prio`，`highest_prio_process` 现场扫描；没有单一全局字段 | 文档待更新 | [代码实现设计·最高优先级](<../draft/新版设计/共享调度器模块代码实现设计.md#最高优先级的获取>)、[process_info.rs:32](../../src/schedule/process_info.rs#L32) |
+| VVAR 优先级收敛 | 只共享最高优先级；进程选择在内核完成 | 减少 VVAR 之外的跨边界访问 | 当前按进程/CPU 保存 `highest_prio` 并现场扫描；Step 1 计划收敛 | 未实现 | [0003 Step 1](../plans/0003-scheduler-refactor/README.md#步骤-1调度循环修改)、[process_info.rs:32](../../src/schedule/process_info.rs#L32) |
 
 ### 上下文、切换与栈
 
@@ -103,7 +103,7 @@ applies_to:
 - 草稿里**已经落地**的主要是：`SchedAction`、合并 `ktrap_entry`/`utrap_entry`、TrapInfo 在入口后入队、`pid`/`is_kernel` 分开。
 - **部分落地**：取消通用保存上下文接口、`trap_entry` 补充预保存栈、`TrapWaitQueue` 缓存 trap、`IdleHandler`（类型已删、字段还在）、`into_user` 用户栈管理。
 - **未实现且影响接口的**：删除 `Blocking`、`set_state` 只读化、`context_type`、`register_waker`、`resched`/`restore_context` 改名、`dealloc` 清理、事件源改名/职责扩展、`TrapInfo::handle` 收窄、删除 `new_handler`。
-- **未实现或待定的设计项**：`trap_handler` 合并、内核/用户 TCB 统一、上下文容器、事件源动态创建、`sources` 活跃标志、全局最高优先级字段、`into_user` 用户栈回收。
+- **未实现或待定的设计项**：`trap_handler` 合并、内核/用户 TCB 统一、上下文容器、事件源动态创建、`sources` 活跃标志、VVAR 优先级收敛（Q-038）、`into_user` 用户栈回收。
 - **步骤 3（可重入）**：全部未实现，是 0003 计划的最后一步；上面的 Task 接口项是它的前置或后续切片。
 
 ## 产生的 Q
@@ -129,4 +129,4 @@ applies_to:
 - `Q-035`：`Context::into_user` 的用户栈分配/回收接口是否要进入 `Context` trait。
 - `Q-036`：空栈进入调度器是否必须，以及多核同步如何解决（图中标注“理想中可以用非空栈”）。
 - `Q-037`：调度器 `sources` 是否需要活跃标志。
-- `Q-038`：是否需要全局最高优先级字段，还是接受当前按进程/CPU 扫描的实现。
+- `Q-038`：VVAR 只共享最高优先级、进程选择在内核；原问题是是否需要全局最高优先级字段。

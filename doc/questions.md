@@ -75,10 +75,10 @@
 
 | ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
 |---|---|---|---|---|---|---|---|---|
+| Q-038 | P1 | VVAR 中进程优先级如何收敛为仅最高优先级？进程选择如何统一到内核？ | 设计 | 优先级/共享数据 | 方向已定：仅共享最高优先级、内核选择进程；细节待 Step 1.1 | 调度器 | [0003 Step 1](plans/0003-scheduler-refactor/README.md#步骤-1调度循环修改)、[process_info.rs:32](../src/schedule/process_info.rs#L32) | leaning |
 | Q-023 | P2 | 内核是否访问调度器的 `sources` 字段？`init_except_sources` 的假设是否成立？ | 实现 | 初始化/共享数据 | 代码注释存疑 | 初始化 | [scheduler.rs:135](../src/schedule/scheduler.rs#L135) | open |
 | Q-019 | P3 | `KERNEL_SCHEDULER` / `KERNEL_STACKS` 是否还需要放在 VVAR？能否直接用 `USER_SCHEDULER` / `STACK_HANDLER`？ | 实现 | 共享数据/初始化 | 倾向不必要，未改 | Phase 2 | [可重入·共享数据](<draft/可重入分析/调度器可重入设计文档.md#空间维度共享数据列表>) | leaning |
 | Q-028 | P3 | `user_init` 中“用户态不需要初始化 `CURRENT_TASK`/`IN_KERNEL`/`STACK_HANDLER`/`CURRENT_VSPACE`”是否成立？ | 实现 | 初始化 | 存疑 | 初始化 | [api.rs:267](../src/api.rs#L267) | open |
-| Q-038 | P3 | 是否需要全局最高优先级字段？ | 设计 | 优先级/共享数据 | 代码按进程/CPU 保存并现场扫描；文档有全局字段 | 调度器 | [代码实现设计·最高优先级](<draft/新版设计/共享调度器模块代码实现设计.md#最高优先级的获取>)、[process_info.rs:32](../src/schedule/process_info.rs#L32) | open |
 
 ### 多核与休眠
 

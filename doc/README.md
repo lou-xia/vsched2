@@ -111,7 +111,7 @@ vsched2/
     │   ├── task-model.md         # 任务/线程/协程/任务树/上下文类型
     │   ├── os-boundary.md        # OS 与调度器各自负责什么
     │   ├── scheduler.md          # 事件源/优先级/perCPU/共享
-    │   ├── scheduling-loop.md    # 入口出口/路径枚举/trap/栈
+    │   ├── scheduling-loop.md    # existing：调度循环路径（Step 1）
     │   ├── blocking.md           # 阻塞队列/Waker/丢失唤醒
     │   └── reentrancy.md         # 可重入目标设计
     ├── reference/

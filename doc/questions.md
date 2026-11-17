@@ -11,7 +11,7 @@
 - 当前切片（暂定）：步骤 1——调度循环修改，以修正后的“任务切换模型（新版调度算法）”图为准。
 - 优先级：`P0` 不解决就无法写当前切片的 design/plan；`P1` 当前切片可绕过、但下一片前必须解决；`P2` 重构完成前；`P3` 清理/以后。
 - 排序：按主题分节；`## Open`（open/leaning，同等）在前，`## Closed`（decided/dropped，同等）在后；每个主题内按 `P0 → P3`，同优先级按 `Q-ID` 升序。
-- P0 速查：Q-005、Q-006、Q-007、Q-029、Q-030。
+- P0 速查：Q-005、Q-006、Q-007。
 
 ## Open
 
@@ -31,10 +31,9 @@
 
 | ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| Q-002 | P2 | “事件源”接口是否改名？改成什么？ | 接口 | 接口/OS 适配 | 确认要改名，名字未定 | 接口 | [设计·事件源](<draft/新版设计/共享调度器模块设计文档.md#事件源>) | leaning |
+| Q-041 | P1 | 如何实现跨进程唤醒用户任务，并让唤醒携带数据？ | 设计 | 跨进程唤醒/IPC | 未定；需要把任务放入目标用户调度器并携带结果 | IPC/Step 2 | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | open |
+| Q-042 | P1 | 同步系统调用与异步系统调用是否共用 TrapInfo 发送队列？ | 设计 | 队列/安全/所有权 | 可能复用；队列需放 VVAR，安全/所有权未定 | IPC/Step 2 | [0003 Step 2](plans/0003-scheduler-refactor/README.md)、[设计·调度循环](design/scheduling-loop.md) | open |
 | Q-022 | P2 | 异步系统调用模块是否独立 vDSO / 归入 IPC 模块？ | 设计 | 模块边界 | 倾向独立 | 模块拆分 | [代码实现设计·异步系统调用模块](<draft/新版设计/共享调度器模块代码实现设计.md#异步系统调用模块>) | leaning |
-| Q-034 | P3 | 事件源是否需要动态创建？生命周期由谁管理？ | 设计 | 事件源生命周期 | 当前固定容量 + 外部注册 | 事件源 | [设计·事件源](<draft/新版设计/共享调度器模块设计文档.md#事件源>)、[scheduler.rs:52](../src/schedule/scheduler.rs#L52) | open |
-| Q-037 | P3 | 调度器 `sources` 是否需要活跃标志？ | 设计 | 调度查询/性能 | 代码无活跃标志；文档有 | 调度器 | [代码实现设计·数据结构](<draft/新版设计/共享调度器模块代码实现设计.md>)、[scheduler.rs:52](../src/schedule/scheduler.rs#L52) | open |
 
 ### 可重入与并发
 
@@ -64,9 +63,6 @@
 
 | ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| Q-029 | P0 | `trap_handler` 是否与调度代码合并？ | 设计 | trap/调度循环 | 可合并，未拍板 | trap | [设计·trap_handler](<draft/新版设计/共享调度器模块设计文档.md#trap_handler的内容>) | open |
-| Q-030 | P0 | `TrapInfo` 在 trap 入口还是 `trap_handler` 中入队？ | 设计 | trap 队列/职责 | 倾向入口后调度代码 | trap | [设计·trap_handler](<draft/新版设计/共享调度器模块设计文档.md#trap_handler的内容>) | leaning |
-| Q-039 | P1 | Step 1 能否阻止“中断→线程/中断”非法路径？是否必须在 Step 2 让中断处理不再走调度？ | 设计 | trap/Step 2 | 路径表标为非法，但 Step 1 无法保证；中断响应中可能新增更高优先级任务 | trap/Step 2 | [设计·调度循环](design/scheduling-loop.md)、[0003 计划](plans/0003-scheduler-refactor/README.md) | open |
 | Q-004 | P2 | 删除 `TrapInfo::new_handler` / `IdleHandler` 后，trap 处理任务和 `SCHEDULER_WAIT_CONTEXT` 如何创建？ | 接口 | trap/初始化 | 提案删除，替代未定 | trap | [数据结构修改·trap](<draft/新版设计/数据结构修改.md#trap-相关>) | leaning |
 | Q-024 | P2 | `trap_wait_queue` 中“用户态任务一定位于当前地址空间”的假设是否成立？ | 实现 | trap/地址空间 | 未确认 | trap | [trap_wait_queue.rs:160](../src/schedule/trap_wait_queue.rs#L160) | open |
 | Q-033 | P2 | `TrapInfo::handle` 收窄后，处理任务通过什么接口接收通信？ | 接口 | trap 通信 | `handle` 仍直接接收被 trap 任务 | trap | [数据结构修改·trap](<draft/新版设计/数据结构修改.md#trap-相关>)、[interface.rs:140](../src/interface.rs#L140) | open |
@@ -78,7 +74,6 @@
 | ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
 |---|---|---|---|---|---|---|---|---|
 | Q-038 | P1 | VVAR 中进程优先级如何收敛为仅最高优先级？进程选择如何统一到内核？ | 设计 | 优先级/共享数据 | 方向已定：仅共享最高优先级、内核选择进程；细节待 Step 1.1 | 调度器 | [0003 Step 1](plans/0003-scheduler-refactor/README.md#步骤-1调度循环修改)、[process_info.rs:32](../src/schedule/process_info.rs#L32) | leaning |
-| Q-023 | P2 | 内核是否访问调度器的 `sources` 字段？`init_except_sources` 的假设是否成立？ | 实现 | 初始化/共享数据 | 代码注释存疑 | 初始化 | [scheduler.rs:135](../src/schedule/scheduler.rs#L135) | open |
 | Q-019 | P3 | `KERNEL_SCHEDULER` / `KERNEL_STACKS` 是否还需要放在 VVAR？能否直接用 `USER_SCHEDULER` / `STACK_HANDLER`？ | 实现 | 共享数据/初始化 | 倾向不必要，未改 | Phase 2 | [可重入·共享数据](<draft/可重入分析/调度器可重入设计文档.md#空间维度共享数据列表>) | leaning |
 | Q-028 | P3 | `user_init` 中“用户态不需要初始化 `CURRENT_TASK`/`IN_KERNEL`/`STACK_HANDLER`/`CURRENT_VSPACE`”是否成立？ | 实现 | 初始化 | 存疑 | 初始化 | [api.rs:267](../src/api.rs#L267) | open |
 
@@ -92,4 +87,14 @@
 
 ## Closed
 
-暂无。关闭项按主题移入本节，保留原行和 `Q-ID`；表头与 Open 相同，状态为 `decided` / `dropped`。
+| ID | 优先级 | 问题 | 类型 | 影响 | 现状/倾向 | 阻塞谁 | 详见 | 状态 |
+|---|---|---|---|---|---|---|---|---|
+| Q-002 | P2 | “事件源”接口是否改名？改成什么？ | 接口 | 接口/OS 适配 | 事件源已删除；旧问题关闭 | — | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | dropped |
+| Q-023 | P2 | 内核是否访问调度器的 `sources` 字段？`init_except_sources` 的假设是否成立？ | 实现 | 初始化/共享数据 | `Scheduler.sources` 删除；旧问题关闭 | — | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | dropped |
+| Q-029 | P0 | `trap_handler` 是否与调度代码合并？ | 设计 | trap/调度循环 | 不合并；handler 独立，简单 trap 内联，复杂才建任务 | — | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | decided |
+| Q-030 | P0 | `TrapInfo` 在 trap 入口还是 `trap_handler` 中入队？ | 设计 | trap 队列/职责 | 在 trap 入口入队 | — | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | decided |
+| Q-034 | P3 | 事件源是否需要动态创建？生命周期由谁管理？ | 设计 | 事件源生命周期 | 事件源删除；动态创建不再需要 | — | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | dropped |
+| Q-037 | P3 | 调度器 `sources` 是否需要活跃标志？ | 设计 | 调度查询/性能 | `sources` 删除；活跃标志不再需要 | — | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | dropped |
+| Q-039 | P1 | Step 1 能否阻止“中断→线程/中断”非法路径？是否必须在 Step 2 让中断处理不再走调度？ | 设计 | trap/Step 2 | 新 trap 机制保证中断后一定运行 trap_handler | — | [0003 Step 2](plans/0003-scheduler-refactor/README.md) | decided |
+
+关闭项保留原行；`decided` 是已决定，`dropped` 是考虑过并放弃。超过约 300 行或 100 条时，把较早的关闭项移到 `questions-closed.md`。

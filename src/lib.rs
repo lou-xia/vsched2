@@ -4,10 +4,10 @@
 #![warn(missing_docs)]
 #![feature(naked_functions)]
 
-#[cfg(feature = "vdso_only")]
-mod api;
+pub mod api;
 #[cfg(feature = "vdso_only")]
 mod arch;
+pub(crate) mod block_and_wake;
 #[allow(non_snake_case)]
 #[allow(missing_docs)]
 pub mod current;
@@ -19,6 +19,7 @@ mod main_loop;
 pub mod schedule;
 mod stack;
 
+pub use api::*;
 pub use current::VvarData;
 pub use interface::*;
 

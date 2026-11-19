@@ -2,6 +2,7 @@
 #![allow(missing_docs)]
 
 use core::task::Poll;
+use kernel_guard::{BaseGuard, IrqSave};
 use vdso_helper::{trait_interface, use_mut_cfg};
 
 use_mut_cfg!();
@@ -13,10 +14,16 @@ trait_interface! {
         fn state(&self) -> TaskState;
         /// 设置任务状态，返回任务的旧状态。
         fn set_state(&self, state: TaskState) -> TaskState;
-        /// 根据任务当前的状态，修改任务状态为参数中的对应值。返回任务的旧状态。
+        /// 将一个action存储在TCB中，返回旧的action
+        fn set_action(&self, action: SchedAction) -> SchedAction;
+        /// 获取任务状态锁
         ///
-        /// 该接口对任务状态的所有比较和修改需要实现为一个原子操作，从而防止多核下任务阻塞和唤醒相关的同步问题。
-        fn match_set_state(&self, state_from_ready: TaskState, state_from_running: TaskState, state_from_blocked: TaskState, state_from_exited: TaskState, state_from_blocking: TaskState) -> TaskState;
+        /// 返回的指针代表获取的guard，会且仅会传入同一个任务的`state_lock_release()`中。
+        ///
+        /// 在持有锁期间，会获取和修改任务的`state`和`action`。
+        fn state_lock_acquire(&self) -> *const ();
+        /// 释放任务状态锁
+        fn state_lock_release(&self, lock: *const ());
         /// 任务优先级
         fn priority(&self) -> isize;
         /// 判断任务为线程或协程，依据是保存的上下文类型
@@ -52,11 +59,23 @@ trait_interface! {
         /// 不需切换地址空间，不需设置当前栈。
         fn restore_context(&self);
         /// 恢复协程上下文，函数返回时自动保存了协程上下文
-        fn poll(&self) -> Poll<isize>;
+        fn poll(&self, cx: &mut core::task::Context<'_>) -> Poll<isize>;
         /// 获取线程上下文保存的`Stack`指针
         fn thread_stack(&self) -> *mut ();
         /// 设置协程运行返回值
         fn set_return_value(&self, value: isize);
+        /// 设置中断状态
+        ///
+        /// 用于在上下文保存时保存任务的中断状态并存储进任务中，在上下文恢复时恢复对应的中断状态。
+        ///
+        /// 中断状态可以视为上下文的一部分。
+        fn set_irq_state(&self, state: <IrqSave as BaseGuard>::State);
+        /// 获取中断状态
+        ///
+        /// 用于在上下文保存时保存任务的中断状态并存储进任务中，在上下文恢复时恢复对应的中断状态。
+        ///
+        /// 中断状态可以视为上下文的一部分。
+        fn get_irq_state(&self) -> <IrqSave as BaseGuard>::State;
         /// 释放一个已经退出的任务
         ///
         /// 如果要提供对任务join的支持，则该函数中还需实现通知等待该任务退出的任务的机制。
@@ -169,7 +188,7 @@ trait_interface! {
         ///
         /// 地址运算的方式如下：
         ///
-        /// 以下描述可以参考![此流程图](../doc/assets/get_user_data流程图.png)。
+        /// 以下描述可以参考![此流程图](../doc/archive/1.初版实现/get_user_data流程图.png)。
         ///
         /// 1. 获取内核态中对应变量（`A`）相对于vdso基址（`KBASE`）的虚拟地址偏移量（`offset`）
         /// 2. 获取用户空间中的vdso基址（虚拟地址）（`UBASE`）
@@ -245,4 +264,59 @@ pub enum TaskState {
     ///
     /// （在任务内设置Blocking状态）设置状态为`Blocking` -> 保存上下文 -> 设置状态为`Blocked` -> 从`CURRENT_TASK`上清除
     Blocking = 4,
+}
+
+/// 下一次主动进入调度器时，调度器的行为。
+///
+/// 暂存在TCB中，在进入调度器后读取。
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum SchedAction {
+    /// 阻塞，但不需要放入阻塞队列中（用于处理其它异步函数已经注册了阻塞队列的情况）
+    ///
+    /// 低32位取值为0。
+    ///
+    /// JustBlock作为SchedAction的默认值，用于适配协程的poll函数返回Pending时的情况。
+    JustBlock,
+    /// 让出
+    ///
+    /// 低32位取值为1
+    Yield,
+    /// 阻塞，放入对应id的阻塞队列中
+    ///
+    /// 低32位取值为2，高32位为阻塞队列id。
+    ///
+    /// 阻塞队列id由调度器通过`alloc_block_queue`分配，OS不能自行指定；
+    /// 进入调度器后，由调度器在同一临界区内完成“检测通知”与“加入阻塞队列”。
+    Block(u32),
+    /// 退出
+    ///
+    /// 低32位取值为3
+    Exit,
+}
+
+impl TryFrom<u64> for SchedAction {
+    type Error = u32;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        let upper = (value >> 32) as u32;
+        let lower = value as u32;
+        match lower {
+            0 => Ok(SchedAction::JustBlock),
+            1 => Ok(SchedAction::Yield),
+            2 => Ok(SchedAction::Block(upper)),
+            3 => Ok(SchedAction::Exit),
+            _ => Err(lower),
+        }
+    }
+}
+
+impl From<SchedAction> for u64 {
+    fn from(action: SchedAction) -> Self {
+        match action {
+            SchedAction::JustBlock => 0,
+            SchedAction::Yield => 1,
+            SchedAction::Block(id) => ((id as u64) << 32) | 2,
+            SchedAction::Exit => 3,
+        }
+    }
 }

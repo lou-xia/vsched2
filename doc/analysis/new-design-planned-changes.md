@@ -19,7 +19,7 @@ applies_to:
 ## 方法
 
 - 阅读 `共享调度器模块设计文档.md`、`共享调度器模块代码实现设计.md`、`数据结构修改.md`。
-- 三篇文字文档为主；`*.drawio` 用于核对路径。图中额外标注“空栈进入调度器的多核同步问题”，作为待确认项，不进入修改项表。
+- 三篇文字文档为主；`*.drawio` 用于核对路径。图中额外标注“空栈进入调度模块的多核同步问题”，作为待确认项，不进入修改项表。
 - 提取“是否需要修改”“对原有设计做如下修改”“需要进一步考虑”等明确表述；不把纯概念说明当成修改项。
 - 对照 `src/interface.rs`、`src/main_loop.rs`、`src/current.rs`、`src/schedule/`、`src/stack/`，标注当前实现。
 - 状态只表示“代码与草稿的差距”，不表示优先级；P0/P1 仍由 `plans/0003-scheduler-refactor` 和 `questions.md` 决定。
@@ -38,11 +38,11 @@ applies_to:
 
 | 修改项 | 草稿计划 | 原因 | 当前实现 | 状态 | 来源 |
 |---|---|---|---|---|---|
-| 删除 `TaskState::Blocking` | 去掉过渡态，阻塞入队/状态切换由调度器在同一临界区完成 | 避免“已入阻塞队列但未保存上下文”的竞态，简化状态机 | `TaskState` 仍含 `Blocking`，`main_loop` 和阻塞队列仍在设置 | 未实现 | [设计·任务](<../draft/新版设计/共享调度器模块设计文档.md#任务>)、[interface.rs:226](../../src/interface.rs#L226) |
-| `Task::set_state` 只读化 | 状态转换由调度器完成，OS 只保留读状态接口 | 避免 OS 与调度器同时改状态，统一临界区 | `set_state` 仍是公开接口，OS 在 trap/阻塞路径直接调用 | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:16](../../src/interface.rs#L16) |
+| 删除 `TaskState::Blocking` | 去掉过渡态，阻塞入队/状态切换由调度模块在同一临界区完成 | 避免“已入阻塞队列但未保存上下文”的竞态，简化状态机 | `TaskState` 仍含 `Blocking`，`main_loop` 和阻塞队列仍在设置 | 未实现 | [设计·任务](<../draft/新版设计/共享调度器模块设计文档.md#任务>)、[interface.rs:226](../../src/interface.rs#L226) |
+| `Task::set_state` 只读化 | 状态转换由调度模块完成，OS 只保留读状态接口 | 避免 OS 与调度模块同时改状态，统一临界区 | `set_state` 仍是公开接口，OS 在 trap/阻塞路径直接调用 | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:16](../../src/interface.rs#L16) |
 | 新增 `SchedAction` | 用 action 表达主动让权原因：yield、block、exit；trap 不使用 | 调度器需要知道任务为什么进入调度器 | 已实现为 `SchedAction` + `set_action` | 已实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:273](../../src/interface.rs#L273) |
 | `is_coroutine()` → `context_type()` | 从布尔判断扩展为协程/线程/中断三类上下文 | 恢复路径必须区分能否在用户态恢复；中断上下文要在内核恢复 | 仍只有 `is_coroutine() -> bool` | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:32](../../src/interface.rs#L32) |
-| 新增 `Task::register_waker` | 向用户任务提供调度器的 waker | 用户任务在 `poll` 的 `Context` 中保存调度器 waker，统一唤醒路径 | 没有该接口；waker 在 `block_and_wake/waker.rs` 内部 | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[waker.rs](../../src/block_and_wake/waker.rs) |
+| 新增 `Task::register_waker` | 向用户任务提供调度模块的 waker | 用户任务在 `poll` 的 `Context` 中保存调度模块 waker，统一唤醒路径 | 没有该接口；waker 在 `block_and_wake/waker.rs` 内部 | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[waker.rs](../../src/block_and_wake/waker.rs) |
 | `resched()` → `save_thread_context` | 改名并增加 action 操作 | 只保存线程现场，语义比“重新调度”更窄 | 仍叫 `resched`，API 调用它进入调度 | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:56](../../src/interface.rs#L56) |
 | `restore_context()` → `restore_thread_context()` | 只恢复用户态可恢复的线程上下文 | 中断上下文不能由用户态完整恢复，必须由内核恢复 | 仍叫 `restore_context`，注释允许线程或 trap 上下文 | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:60](../../src/interface.rs#L60) |
 | `Task::dealloc` 补充清理 | 补充 action，检查出队和释放锁 | 退出任务不能留下队列项/锁 | `dealloc` 存在，但没有 action 参数；清理依赖调用点 | 未实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:82](../../src/interface.rs#L82) |
@@ -50,7 +50,7 @@ applies_to:
 | 上下文改为可嵌套容器 | TCB 中保存嵌套现场，候选是 `Vec<上下文>` | 调度代码被中断时不能覆盖已有现场；保存/恢复时也可开中断 | `Task` 只有 `thread_stack`/`is_coroutine`，没有上下文容器 | 待定 | [设计·可重入](<../draft/新版设计/共享调度器模块设计文档.md#用户调度代码可重入>)、[数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>) |
 | 分清 `pid` 与 `is_kernel` | 地址空间 id 与任务特权级分开 | 任务特权级与当前 CPU 特权级不同，混用会判断错恢复路径 | `pid`/`is_kernel` 已分开，`IN_KERNEL` 单独表示当前特权级 | 已实现 | [数据结构修改·任务](<../draft/新版设计/数据结构修改.md#任务>)、[interface.rs:41](../../src/interface.rs#L41) |
 
-### 调度器与事件源
+### 调度模块与事件源
 
 | 修改项 | 草稿计划 | 原因 | 当前实现 | 状态 | 来源 |
 |---|---|---|---|---|---|
@@ -124,7 +124,7 @@ applies_to:
 - `Q-033`：`TrapInfo::handle` 收窄后，处理任务通过什么接口接收通信。
 - `Q-034`（已关闭）：事件源删除，不再需要动态创建。
 - `Q-035`：`Context::into_user` 的用户栈分配/回收接口是否要进入 `Context` trait。
-- `Q-036`：空栈进入调度器是否必须，以及多核同步如何解决（图中标注“理想中可以用非空栈”）。
+- `Q-036`：空栈进入调度模块是否必须，以及多核同步如何解决（图中标注“理想中可以用非空栈”）。
 - `Q-037`（已关闭）：`sources` 删除，活跃标志不再需要。
 - `Q-038`：VVAR 只共享最高优先级、进程选择在内核；原问题是是否需要全局最高优先级字段。
 - `Q-039`（已关闭）：新 trap 机制保证中断后一定运行 `trap_handler`。

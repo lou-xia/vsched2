@@ -76,7 +76,7 @@
 
 | 路径 | 类型 | 回答什么 | 状态 | 去向 |
 |---|---|---|---|---|
-| [编译命令.md](编译命令.md) | reference 素材 | 怎么编译调度器 | current | 并入 `reference/build-and-test.md` |
+| [编译命令.md](编译命令.md) | reference 素材 | 怎么编译调度模块 | current | 并入 `reference/build-and-test.md` |
 | [文档整理计划.md](文档整理计划.md) | plan | 文档落地的阶段与顺序 | draft | 保留在 doc/ 作为文档落地记录；完成后归档 |
 | [共享调度器模块设计文档](draft/新版设计/共享调度器模块设计文档.md) | design | 任务模型、事件源、调度路径、可重入方向 | draft | 拆到 `design/*` |
 | [共享调度器模块代码实现设计](draft/新版设计/共享调度器模块代码实现设计.md) | design | 模块职责、接口、数据结构、上下文保存约定 | draft | 接口→`reference/interfaces.md`；结构→`reference/module-map.md`；设计→`design/*` |
@@ -109,7 +109,7 @@ vsched2/
     │   ├── README.md             # existing：设计索引/状态
     │   ├── user-interrupt-context.md  # existing：用户态任务中断上下文
     │   ├── task-model.md         # 任务/线程/协程/任务树/上下文类型
-    │   ├── os-boundary.md        # OS 与调度器各自负责什么
+    │   ├── os-boundary.md        # OS 与调度模块各自负责什么
     │   ├── scheduler.md          # 事件源/优先级/perCPU/共享
     │   ├── scheduling-loop.md    # existing：调度循环路径（Step 1）
     │   ├── blocking.md           # 阻塞队列/Waker/丢失唤醒
@@ -127,7 +127,7 @@ vsched2/
     │   └── 0001-user-task-interrupt-ownership.md  # existing：D-001
     ├── plans/
     │   ├── README.md             # existing：计划索引
-    │   └── 0003-scheduler-refactor/      # existing：README + prep-schedule + step-*
+    │   └── 0003-scheduler-refactor/      # existing：README + step-*
     ├── analysis/
     │   ├── new-design-planned-changes.md  # existing：新版设计 vs 实现
     │   └── reentrancy/           # planned：判定标准/矩阵/结论
